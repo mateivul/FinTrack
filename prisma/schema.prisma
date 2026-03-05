@@ -1,0 +1,308 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Language {
+  EN
+  RO
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum TransactionSource {
+  MANUAL
+  IMPORT
+  RECURRING
+}
+
+enum BudgetPeriod {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum RecurringFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum AccountType {
+  CASH
+  CARD
+  SAVINGS
+  INVESTMENT
+  LOAN
+  INSURANCE
+  OTHER
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum ImportStatus {
+  PROCESSING
+  REVIEW
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  avatar       String?
+  language     Language @default(EN)
+  theme        Theme    @default(SYSTEM)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bankAccounts        BankAccount[]
+  transactions        Transaction[]
+  budgets             Budget[]
+  savingsGoals        SavingsGoal[]
+  recurringRules      RecurringRule[]
+  tags                Tag[]
+  importHistories     ImportHistory[]
+  importRules         ImportRule[]
+  apiKeys             ApiKey[]
+  sharedBudgetInvites SharedBudgetInvite[] @relation("invitedUser")
+  sentBudgetInvites   SharedBudgetInvite[] @relation("inviterUser")
+  sharedBudgets       BudgetShare[]
+}
+
+model BankAccount {
+  id             String      @id @default(cuid())
+  name           String
+  accountType    AccountType @default(CARD)
+  bankName       String?
+  currency       String      @default("RON")
+  accountNumber  String?
+  color          String      @default("#3B82F6")
+  icon           String      @default("building-2")
+  currentBalance Float       @default(0)
+  isActive       Boolean     @default(true)
+  userId         String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
+  transfersReceived Transaction[]  @relation("transferTo")
+  recurringRules    RecurringRule[]
+}
+
+model Transaction {
+  id                  String            @id @default(cuid())
+  amount              Float
+  type                TransactionType
+  date                DateTime
+  description         String
+  originalDescription String?
+  notes               String?
+  bankAccountId       String
+  toAccountId         String?
+  userId              String
+  isRecurring         Boolean           @default(false)
+  recurringRuleId     String?
+  source              TransactionSource @default(MANUAL)
+  importHistoryId     String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  bankAccount   BankAccount    @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  toAccount     BankAccount?   @relation("transferTo", fields: [toAccountId], references: [id])
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recurringRule RecurringRule? @relation(fields: [recurringRuleId], references: [id])
+  importHistory ImportHistory? @relation(fields: [importHistoryId], references: [id])
+  tags          TransactionTag[]
+  splitParts    SplitPart[]    @relation("parentTransaction")
+  splitOf       SplitPart?     @relation("childTransaction")
+}
+
+model SplitPart {
+  id                 String @id @default(cuid())
+  parentId           String
+  childTransactionId String @unique
+  percentage         Float?
+  amount             Float
+
+  parent Transaction @relation("parentTransaction", fields: [parentId], references: [id], onDelete: Cascade)
+  child  Transaction @relation("childTransaction", fields: [childTransactionId], references: [id], onDelete: Cascade)
+}
+
+model Budget {
+  id             String       @id @default(cuid())
+  name           String
+  tagId          String?
+  amount         Float
+  period         BudgetPeriod @default(MONTHLY)
+  alertThreshold Float        @default(0.8)
+  isShared       Boolean      @default(false)
+  rollover       Boolean      @default(false)
+  userId         String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  tag        Tag?                 @relation(fields: [tagId], references: [id])
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sharedWith BudgetShare[]
+  invites    SharedBudgetInvite[]
+}
+
+model BudgetShare {
+  id       String @id @default(cuid())
+  budgetId String
+  userId   String
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, userId])
+}
+
+model SharedBudgetInvite {
+  id            String       @id @default(cuid())
+  budgetId      String
+  inviterUserId String
+  invitedEmail  String
+  invitedUserId String?
+  status        InviteStatus @default(PENDING)
+  createdAt     DateTime     @default(now())
+
+  budget      Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  inviter     User   @relation("inviterUser", fields: [inviterUserId], references: [id])
+  invitedUser User?  @relation("invitedUser", fields: [invitedUserId], references: [id])
+}
+
+model SavingsGoal {
+  id                  String    @id @default(cuid())
+  name                String
+  targetAmount        Float
+  currentAmount       Float     @default(0)
+  deadline            DateTime?
+  icon                String    @default("piggy-bank")
+  color               String    @default("#10B981")
+  monthlyContribution Float?
+  userId              String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RecurringRule {
+  id             String             @id @default(cuid())
+  description    String
+  amount         Float
+  type           TransactionType
+  frequency      RecurringFrequency
+  nextOccurrence DateTime
+  bankAccountId  String
+  userId         String
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#6B7280")
+  userId    String
+  createdAt DateTime @default(now())
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions TransactionTag[]
+  budgets      Budget[]
+  importRules  ImportRuleTag[]
+
+  @@unique([name, userId])
+}
+
+model TransactionTag {
+  transactionId String
+  tagId         String
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([transactionId, tagId])
+}
+
+model ImportRule {
+  id          String   @id @default(cuid())
+  userId      String
+  pattern     String
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags ImportRuleTag[]
+
+  @@unique([userId, pattern])
+}
+
+model ImportRuleTag {
+  importRuleId String
+  tagId        String
+
+  importRule ImportRule @relation(fields: [importRuleId], references: [id], onDelete: Cascade)
+  tag        Tag        @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([importRuleId, tagId])
+}
+
+model ImportHistory {
+  id                   String       @id @default(cuid())
+  fileName             String
+  fileType             String
+  bankName             String?
+  transactionsImported Int          @default(0)
+  transactionsSkipped  Int          @default(0)
+  status               ImportStatus @default(PROCESSING)
+  userId               String
+  createdAt            DateTime     @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+model ApiKey {
+  id        String    @id @default(cuid())
+  name      String
+  keyHash   String    @unique
+  keyPrefix String
+  userId    String
+  lastUsed  DateTime?
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
