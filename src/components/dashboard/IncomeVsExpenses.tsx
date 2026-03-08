@@ -47,7 +47,7 @@ export function IncomeVsExpenses({ data, currency = "RON" }: IncomeVsExpensesPro
               tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}
+              tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
             />
             <Tooltip
               formatter={(value: unknown, name: unknown) => [

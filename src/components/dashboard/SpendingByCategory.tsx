@@ -58,7 +58,7 @@ export function SpendingByCategory({
     color: item.tag.color,
   }));
 
-  const total = data.reduce((sum, item) => sum + item.amount, 0);
+  const total = chartData.reduce((sum, item) => sum + item.value, 0);
 
   if (data.length === 0) {
     return (
