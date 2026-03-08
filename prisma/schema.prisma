@@ -68,15 +68,22 @@ enum ImportStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  avatar       String?
-  language     Language @default(EN)
-  theme        Theme    @default(SYSTEM)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  passwordHash          String
+  name                  String
+  avatar                String?
+  language              Language  @default(EN)
+  theme                 Theme     @default(SYSTEM)
+  emailVerified         Boolean   @default(false)
+  verificationToken     String?
+  verificationTokenExp  DateTime?
+  resetToken            String?
+  resetTokenExp         DateTime?
+  isDemo                Boolean   @default(false)
+  isEphemeral           Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   bankAccounts        BankAccount[]
   transactions        Transaction[]
@@ -111,6 +118,8 @@ model BankAccount {
   transactions      Transaction[]
   transfersReceived Transaction[]  @relation("transferTo")
   recurringRules    RecurringRule[]
+
+  @@index([userId])
 }
 
 model Transaction {
@@ -139,6 +148,10 @@ model Transaction {
   tags          TransactionTag[]
   splitParts    SplitPart[]    @relation("parentTransaction")
   splitOf       SplitPart?     @relation("childTransaction")
+
+  @@index([userId, date])
+  @@index([userId, type])
+  @@index([bankAccountId])
 }
 
 model SplitPart {
@@ -169,6 +182,8 @@ model Budget {
   user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   sharedWith BudgetShare[]
   invites    SharedBudgetInvite[]
+
+  @@index([userId])
 }
 
 model BudgetShare {
@@ -210,6 +225,8 @@ model SavingsGoal {
   updatedAt           DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model RecurringRule {
@@ -225,9 +242,12 @@ model RecurringRule {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
-  bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccount  BankAccount        @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+  tags         RecurringRuleTag[]
+
+  @@index([userId, isActive, nextOccurrence])
 }
 
 model Tag {
@@ -237,10 +257,11 @@ model Tag {
   userId    String
   createdAt DateTime @default(now())
 
-  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions TransactionTag[]
-  budgets      Budget[]
-  importRules  ImportRuleTag[]
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions   TransactionTag[]
+  budgets        Budget[]
+  importRules    ImportRuleTag[]
+  recurringRules RecurringRuleTag[]
 
   @@unique([name, userId])
 }
@@ -253,6 +274,17 @@ model TransactionTag {
   tag         Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([transactionId, tagId])
+  @@index([tagId])
+}
+
+model RecurringRuleTag {
+  recurringRuleId String
+  tagId           String
+
+  recurringRule RecurringRule @relation(fields: [recurringRuleId], references: [id], onDelete: Cascade)
+  tag           Tag           @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([recurringRuleId, tagId])
 }
 
 model ImportRule {
@@ -287,11 +319,15 @@ model ImportHistory {
   transactionsImported Int          @default(0)
   transactionsSkipped  Int          @default(0)
   status               ImportStatus @default(PROCESSING)
+  statementFrom        DateTime?
+  statementTo          DateTime?
   userId               String
   createdAt            DateTime     @default(now())
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+
+  @@index([userId])
 }
 
 model ApiKey {
@@ -305,4 +341,6 @@ model ApiKey {
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
