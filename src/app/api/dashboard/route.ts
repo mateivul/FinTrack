@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
         tags: { include: { tag: true } },
       },
       orderBy: { date: "desc" },
-      take: 10,
+      take: 5,
     }),
     prisma.transactionTag.findMany({
       where: {

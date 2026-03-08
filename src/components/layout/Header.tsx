@@ -38,7 +38,6 @@ export function Header({ onMenuClick, user }: HeaderProps) {
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
-    router.refresh();
   }
 
   async function handleLanguageChange(lang: "en" | "ro") {

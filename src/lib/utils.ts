@@ -70,7 +70,7 @@ export function getTransactionTypeColor(type: string): string {
 }
 
 export function getProgressColor(percentage: number): string {
-  if (percentage < 60) return "bg-emerald-500";
+  if (percentage < 50) return "bg-emerald-500";
   if (percentage < 80) return "bg-yellow-500";
   if (percentage < 100) return "bg-orange-500";
   return "bg-red-500";

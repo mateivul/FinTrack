@@ -38,7 +38,6 @@ export default function LoginPage() {
 
       toast.success(t("auth.welcomeBack"));
       router.push("/");
-      router.refresh();
     } catch {
       toast.error(t("errors.networkError"));
     } finally {

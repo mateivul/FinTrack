@@ -53,7 +53,6 @@ export default function RegisterPage() {
 
       toast.success("Account created! Welcome to FinTrack 🎉");
       router.push("/");
-      router.refresh();
     } catch {
       toast.error(t("errors.networkError"));
     } finally {
