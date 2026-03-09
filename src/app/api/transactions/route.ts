@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { transactionSchema } from "@/lib/validations";
+import { demoGuard } from "@/lib/demo";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get("page") ?? "1");
-  const limit = parseInt(searchParams.get("limit") ?? "25");
+  const limit = parseInt(searchParams.get("limit") ?? "50");
   const type = searchParams.get("type");
   const accountId = searchParams.get("accountId");
   const dateFrom = searchParams.get("dateFrom");
@@ -77,6 +78,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const body = await request.json();
   const parsed = transactionSchema.safeParse(body);
@@ -103,45 +105,49 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const transaction = await prisma.transaction.create({
-      data: {
-        amount: txData.amount,
-        type: txData.type,
-        date: new Date(txData.date as string),
-        description: txData.description ?? "",
-        notes: txData.notes || undefined,
-        bankAccountId: txData.bankAccountId,
-        toAccountId: txData.type === "TRANSFER" ? (txData.toAccountId || null) : null,
-        userId: session.userId,
-        tags: tags?.length
-          ? { create: tags.map((tagId) => ({ tagId })) }
-          : undefined,
-      },
-      include: {
-        bankAccount: { select: { id: true, name: true, currency: true } },
-        toAccount: { select: { id: true, name: true, currency: true } },
-        tags: { include: { tag: true } },
-      },
-    });
-
-    if (txData.type === "TRANSFER") {
-      await prisma.bankAccount.update({
-        where: { id: txData.bankAccountId },
-        data: { currentBalance: { decrement: txData.amount } },
+    const transaction = await prisma.$transaction(async (tx) => {
+      const created = await tx.transaction.create({
+        data: {
+          amount: txData.amount,
+          type: txData.type,
+          date: new Date(txData.date as string),
+          description: txData.description ?? "",
+          notes: txData.notes || undefined,
+          bankAccountId: txData.bankAccountId,
+          toAccountId: txData.type === "TRANSFER" ? (txData.toAccountId || null) : null,
+          userId: session.userId,
+          tags: tags?.length
+            ? { create: tags.map((tagId) => ({ tagId })) }
+            : undefined,
+        },
+        include: {
+          bankAccount: { select: { id: true, name: true, currency: true } },
+          toAccount: { select: { id: true, name: true, currency: true } },
+          tags: { include: { tag: true } },
+        },
       });
-      if (txData.toAccountId) {
-        await prisma.bankAccount.update({
-          where: { id: txData.toAccountId },
-          data: { currentBalance: { increment: txData.amount } },
+
+      if (txData.type === "TRANSFER") {
+        await tx.bankAccount.update({
+          where: { id: txData.bankAccountId },
+          data: { currentBalance: { decrement: txData.amount } },
+        });
+        if (txData.toAccountId) {
+          await tx.bankAccount.update({
+            where: { id: txData.toAccountId },
+            data: { currentBalance: { increment: txData.amount } },
+          });
+        }
+      } else {
+        const balanceDelta = txData.type === "INCOME" ? txData.amount : -txData.amount;
+        await tx.bankAccount.update({
+          where: { id: txData.bankAccountId },
+          data: { currentBalance: { increment: balanceDelta } },
         });
       }
-    } else {
-      const balanceDelta = txData.type === "INCOME" ? txData.amount : -txData.amount;
-      await prisma.bankAccount.update({
-        where: { id: txData.bankAccountId },
-        data: { currentBalance: { increment: balanceDelta } },
-      });
-    }
+
+      return created;
+    });
 
     return NextResponse.json({ transaction }, { status: 201 });
   } catch (error) {

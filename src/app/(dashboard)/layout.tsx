@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { MobileNav } from "@/components/layout/MobileNav";
@@ -12,6 +14,7 @@ interface User {
   email: string;
   language: string;
   theme: string;
+  isDemo?: boolean;
 }
 
 export default function DashboardLayout({
@@ -19,36 +22,46 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const t = useTranslations();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchUser() {
-      try {
-        const res = await fetch("/api/auth/me");
-        if (!res.ok) {
-          router.push("/login");
-          return;
+    fetch("/api/recurring/process", { method: "POST" })
+      .then((res) => res.json())
+      .then(({ processed }) => {
+        if (processed > 0) {
+          queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+          queryClient.invalidateQueries({ queryKey: ["transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["accounts"] });
+          queryClient.invalidateQueries({ queryKey: ["recurring"] });
         }
-        const data = await res.json();
-        setUser(data.user);
-      } catch {
-        router.push("/login");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchUser();
-  }, [router]);
+      })
+      .catch(() => {});
+  }, []);
 
-  if (loading) {
+  const { data: user, isLoading } = useQuery<User>({
+    queryKey: ["auth-me"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/me");
+      if (!res.ok) {
+        router.push("/login");
+        throw new Error("Unauthorized");
+      }
+      const data = await res.json();
+      return data.user;
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 rounded-xl gradient-bg animate-pulse" />
-          <p className="text-muted-foreground text-sm">Loading...</p>
+          <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
         </div>
       </div>
     );
@@ -66,6 +79,11 @@ export default function DashboardLayout({
           user={{ name: user.name, email: user.email, language: user.language }}
         />
 
+        {user.isDemo && (
+          <div className="bg-amber-500 text-amber-950 text-center text-sm py-2 px-4 font-medium shrink-0">
+            Demo mode — you&apos;re exploring a sample account. Changes are visible in your session but reset when you log out.
+          </div>
+        )}
         <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6 overflow-y-auto">
           {children}
         </main>

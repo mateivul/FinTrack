@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { demoGuard } from "@/lib/demo";
 
 const updateProfileSchema = z.object({
   name: z.string().min(2).optional(),
@@ -18,10 +19,11 @@ const changePasswordSchema = z.object({
 export async function PUT(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const body = await request.json();
 
-  if (body.currentPassword) {
+  if (body.currentPassword) { 
     const parsed = changePasswordSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
@@ -61,9 +63,10 @@ export async function PUT(request: NextRequest) {
 export async function DELETE() {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   await prisma.user.delete({ where: { id: session.userId } });
-  session.destroy();
+  await session.destroy();
 
   return NextResponse.json({ success: true });
 }

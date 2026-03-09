@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { demoGuard } from "@/lib/demo";
 
 export async function DELETE(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const body = await request.json();
   const { ids, all, type, search, tagId } = body as {

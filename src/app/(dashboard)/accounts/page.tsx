@@ -59,13 +59,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 const CURRENCIES = ["RON", "EUR", "USD", "GBP", "CHF", "HUF"];
 
 const ACCOUNT_TYPES = [
-  { value: "CASH",       label: "Cash",       icon: Banknote,   color: "#10b981" },
-  { value: "CARD",       label: "Card",       icon: CreditCard, color: "#3b82f6" },
-  { value: "SAVINGS",    label: "Savings",    icon: PiggyBank,  color: "#f59e0b" },
-  { value: "INVESTMENT", label: "Investment", icon: TrendingUp, color: "#8b5cf6" },
-  { value: "LOAN",       label: "Loan",       icon: Landmark,   color: "#ef4444" },
-  { value: "INSURANCE",  label: "Insurance",  icon: Shield,     color: "#06b6d4" },
-  { value: "OTHER",      label: "Other",      icon: Wallet,     color: "#6b7280" },
+  { value: "CASH",       labelKey: "accounts.types.cash",       icon: Banknote,   color: "#10b981" },
+  { value: "CARD",       labelKey: "accounts.types.card",       icon: CreditCard, color: "#3b82f6" },
+  { value: "SAVINGS",    labelKey: "accounts.types.savings",    icon: PiggyBank,  color: "#f59e0b" },
+  { value: "INVESTMENT", labelKey: "accounts.types.investment", icon: TrendingUp, color: "#8b5cf6" },
+  { value: "LOAN",       labelKey: "accounts.types.loan",       icon: Landmark,   color: "#ef4444" },
+  { value: "INSURANCE",  labelKey: "accounts.types.insurance",  icon: Shield,     color: "#06b6d4" },
+  { value: "OTHER",      labelKey: "accounts.types.other",      icon: Wallet,     color: "#6b7280" },
 ] as const;
 
 type AccountTypeValue = typeof ACCOUNT_TYPES[number]["value"];
@@ -156,7 +156,7 @@ export default function AccountsPage() {
 
   async function handleSave() {
     if (!form.name.trim()) {
-      toast.error("Account name is required");
+      toast.error(t("accounts.nameRequired"));
       return;
     }
 
@@ -180,7 +180,7 @@ export default function AccountsPage() {
         return;
       }
 
-      toast.success(editingId ? "Account updated!" : "Account added!");
+      toast.success(editingId ? t("accounts.updated") : t("accounts.created"));
       setDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -192,7 +192,7 @@ export default function AccountsPage() {
   async function handleDelete(id: string) {
     const res = await fetch(`/api/accounts/${id}`, { method: "DELETE" });
     if (res.ok) {
-      toast.success("Account deleted");
+      toast.success(t("accounts.deleted"));
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } else {
@@ -202,12 +202,12 @@ export default function AccountsPage() {
   }
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{t("accounts.title")}</h1>
           <p className="text-sm text-muted-foreground">
-            {accounts.length} account{accounts.length !== 1 ? "s" : ""}
+            {accounts.length} {t("accounts.count")}
           </p>
         </div>
         <Button onClick={openAdd}>
@@ -259,7 +259,7 @@ export default function AccountsPage() {
                       </div>
                       <div>
                         <h3 className="font-semibold">{account.name}</h3>
-                        <p className="text-xs text-muted-foreground">{typeConfig.label}</p>
+                        <p className="text-xs text-muted-foreground">{t(typeConfig.labelKey as Parameters<typeof t>[0])}</p>
                         {account.bankName && (
                           <p className="text-xs text-muted-foreground">{account.bankName}</p>
                         )}
@@ -321,9 +321,9 @@ export default function AccountsPage() {
           <div className="space-y-4 py-2">
             {!editingId && (
               <div className="space-y-1.5">
-                <Label>Account type</Label>
+                <Label>{t("accounts.type")}</Label>
                 <div className="grid grid-cols-4 gap-2">
-                  {ACCOUNT_TYPES.map(({ value, label, icon: Icon, color }) => (
+                  {ACCOUNT_TYPES.map(({ value, labelKey, icon: Icon, color }) => (
                     <button
                       key={value}
                       type="button"
@@ -336,7 +336,7 @@ export default function AccountsPage() {
                       )}
                     >
                       <Icon className="w-5 h-5" style={{ color }} />
-                      {label}
+                      {t(labelKey as Parameters<typeof t>[0])}
                     </button>
                   ))}
                 </div>
@@ -372,11 +372,11 @@ export default function AccountsPage() {
 
             <div className="space-y-1.5">
               <Label>
-                Bank / institution{" "}
-                <span className="text-muted-foreground font-normal">(optional)</span>
+                {t("accounts.bankInstitution")}{" "}
+                <span className="text-muted-foreground font-normal">({t("common.optional")})</span>
               </Label>
               <Input
-                placeholder="e.g. Banca Transilvania, ING, Revolut"
+                placeholder={t("accounts.bankInstitutionPlaceholder")}
                 value={form.bankName}
                 onChange={(e) => setForm((f) => ({ ...f, bankName: e.target.value }))}
               />
@@ -395,7 +395,7 @@ export default function AccountsPage() {
                 />
                 <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                   <Info className="w-3 h-3 shrink-0" />
-                  Changing the balance records an automatic income or expense transaction.
+                  {t("accounts.balanceAdjustInfo")}
                 </p>
               </div>
             )}

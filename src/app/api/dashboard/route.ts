@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     }),
     prisma.bankAccount.findMany({
       where: { userId: session.userId, isActive: true },
-      select: { id: true, name: true, currency: true, currentBalance: true, color: true, icon: true },
+      select: { id: true, name: true, bankName: true, currency: true, currentBalance: true, color: true, icon: true },
     }),
     prisma.transaction.findMany({
       where: { userId: session.userId, date: { gte: monthStart, lte: monthEnd } },
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
         tags: { include: { tag: true } },
       },
       orderBy: { date: "desc" },
-      take: 5,
+      take: 10,
     }),
     prisma.transactionTag.findMany({
       where: {
@@ -102,29 +102,34 @@ export async function GET(request: NextRequest) {
 
   const spendingData = Object.values(tagTotals).sort((a, b) => b.amount - a.amount);
 
-  const monthlyTrend = [];
-  for (let i = 11; i >= 0; i--) {
-    const date = subMonths(now, i);
-    const start = startOfMonth(date);
-    const end = endOfMonth(date);
+  const monthRanges = Array.from({ length: 12 }, (_, i) => {
+    const date = subMonths(now, 11 - i);
+    return { date, start: startOfMonth(date), end: endOfMonth(date) };
+  });
 
-    const [inc, exp] = await Promise.all([
-      prisma.transaction.aggregate({
-        where: { userId: session.userId, type: "INCOME", date: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
-      prisma.transaction.aggregate({
-        where: { userId: session.userId, type: "EXPENSE", date: { gte: start, lte: end } },
-        _sum: { amount: true },
-      }),
-    ]);
+  const trendStart = monthRanges[0].start;
+  const trendEnd = monthRanges[11].end;
+  const trendTx = await prisma.transaction.findMany({
+    where: {
+      userId: session.userId,
+      type: { in: ["INCOME", "EXPENSE"] },
+      date: { gte: trendStart, lte: trendEnd },
+    },
+    select: { date: true, amount: true, type: true },
+  });
 
-    monthlyTrend.push({
-      month: format(date, "MMM"),
-      income: inc._sum.amount ?? 0,
-      expenses: exp._sum.amount ?? 0,
-    });
-  }
+  const monthlyTrend = monthRanges.map(({ date, start, end }) => {
+    let income = 0;
+    let expenses = 0;
+    for (const tx of trendTx) {
+      const d = new Date(tx.date);
+      if (d >= start && d <= end) {
+        if (tx.type === "INCOME") income += tx.amount;
+        else expenses += tx.amount;
+      }
+    }
+    return { month: format(date, "MMM"), income, expenses };
+  });
 
   const totalIncome = currentIncome._sum.amount ?? 0;
   const totalExpenses = currentExpenses._sum.amount ?? 0;
@@ -136,9 +141,8 @@ export async function GET(request: NextRequest) {
       totalIncome,
       totalExpenses,
       netSavings: totalIncome - totalExpenses,
-      incomeTrend: prevIncome > 0 ? ((totalIncome - prevIncome) / prevIncome) * 100 : 0,
-      expensesTrend: prevExpenses > 0 ? ((totalExpenses - prevExpenses) / prevExpenses) * 100 : 0,
-      savingsTrend: 0,
+      incomeTrend: prevIncome > 0 ? ((totalIncome - prevIncome) / prevIncome) * 100 : undefined,
+      expensesTrend: prevExpenses > 0 ? ((totalExpenses - prevExpenses) / prevExpenses) * 100 : undefined,
     },
     accounts,
     recentTransactions,

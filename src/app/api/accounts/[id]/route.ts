@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { bankAccountSchema } from "@/lib/validations";
+import { demoGuard } from "@/lib/demo";
 
 export async function GET(
   _request: NextRequest,
@@ -25,6 +26,7 @@ export async function PUT(
 ) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const { id } = await params;
   const body = await request.json();
@@ -38,29 +40,36 @@ export async function PUT(
   });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const account = await prisma.bankAccount.update({
-    where: { id },
-    data: parsed.data,
-  });
-
-  if (
-    parsed.data.currentBalance !== undefined &&
-    parsed.data.currentBalance !== existing.currentBalance
-  ) {
-    const diff = parsed.data.currentBalance - existing.currentBalance;
-    await prisma.transaction.create({
-      data: {
-        amount: Math.abs(diff),
-        type: diff > 0 ? "INCOME" : "EXPENSE",
-        date: new Date(),
-        description: diff > 0 ? "Balance adjustment (increase)" : "Balance adjustment (decrease)",
-        notes: `Manual balance correction: ${existing.currentBalance} → ${parsed.data.currentBalance} ${existing.currency}`,
-        source: "MANUAL",
-        userId: session.userId,
-        bankAccountId: id,
-      },
+  const account = await prisma.$transaction(async (tx) => {
+    const updated = await tx.bankAccount.update({
+      where: { id },
+      data: parsed.data,
     });
-  }
+
+    if (
+      parsed.data.currentBalance !== undefined &&
+      parsed.data.currentBalance !== existing.currentBalance
+    ) {
+      const diff = parsed.data.currentBalance - existing.currentBalance;
+      const isRo = session.language === "RO";
+      await tx.transaction.create({
+        data: {
+          amount: Math.abs(diff),
+          type: diff > 0 ? "INCOME" : "EXPENSE",
+          date: new Date(),
+          description: diff > 0
+            ? (isRo ? "Ajustare sold (creștere)" : "Balance adjustment (increase)")
+            : (isRo ? "Ajustare sold (scădere)" : "Balance adjustment (decrease)"),
+          notes: `${isRo ? "Corecție manuală sold" : "Manual balance correction"}: ${existing.currentBalance} → ${parsed.data.currentBalance} ${existing.currency}`,
+          source: "MANUAL",
+          userId: session.userId,
+          bankAccountId: id,
+        },
+      });
+    }
+
+    return updated;
+  });
 
   return NextResponse.json({ account });
 }
@@ -71,11 +80,13 @@ export async function DELETE(
 ) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const { id } = await params;
-  await prisma.bankAccount.deleteMany({
+  const result = await prisma.bankAccount.deleteMany({
     where: { id, userId: session.userId },
   });
 
+  if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

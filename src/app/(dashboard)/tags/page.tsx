@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Tag, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
@@ -51,6 +52,7 @@ interface TagItem {
 const defaultForm = { name: "", color: "#3b82f6" };
 
 export default function TagsPage() {
+  const t = useTranslations();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -84,7 +86,7 @@ export default function TagsPage() {
 
   async function handleSave() {
     if (!form.name.trim()) {
-      toast.error("Tag name is required");
+      toast.error(t("tags.nameRequired"));
       return;
     }
 
@@ -101,11 +103,11 @@ export default function TagsPage() {
 
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        toast.error(d.error || "An error occurred");
+        toast.error(d.error || t("common.error"));
         return;
       }
 
-      toast.success(editingId ? "Tag updated!" : "Tag created!");
+      toast.success(editingId ? t("tags.updated") : t("tags.created"));
       setDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["tags"] });
     } finally {
@@ -116,26 +118,26 @@ export default function TagsPage() {
   async function handleDelete(id: string) {
     const res = await fetch(`/api/tags/${id}`, { method: "DELETE" });
     if (res.ok) {
-      toast.success("Tag deleted");
+      toast.success(t("tags.deleted"));
       queryClient.invalidateQueries({ queryKey: ["tags"] });
     } else {
-      toast.error("An error occurred");
+      toast.error(t("common.error"));
     }
     setDeleteId(null);
   }
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Tags</h1>
+          <h1 className="text-2xl font-bold">{t("nav.tags")}</h1>
           <p className="text-sm text-muted-foreground">
-            {tags.length} tag{tags.length !== 1 ? "s" : ""}
+            {tags.length} {t("tags.count")}
           </p>
         </div>
         <Button onClick={openAdd}>
           <Plus className="w-4 h-4 mr-2" />
-          New Tag
+          {t("tags.add")}
         </Button>
       </div>
 
@@ -151,13 +153,13 @@ export default function TagsPage() {
             <div className="w-16 h-16 rounded-3xl bg-primary/10 flex items-center justify-center mb-4">
               <Tag className="w-8 h-8 text-primary" />
             </div>
-            <h3 className="font-semibold text-lg mb-1">No tags yet</h3>
+            <h3 className="font-semibold text-lg mb-1">{t("tags.noTags")}</h3>
             <p className="text-sm text-muted-foreground max-w-xs mb-4">
-              Create tags to organize your transactions. Tags work across all accounts.
+              {t("tags.noTagsDesc")}
             </p>
             <Button onClick={openAdd}>
               <Plus className="w-4 h-4 mr-2" />
-              Create your first tag
+              {t("tags.add")}
             </Button>
           </CardContent>
         </Card>
@@ -191,21 +193,21 @@ export default function TagsPage() {
                     <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenuItem onClick={() => openEdit(tag)}>
                         <Pencil className="w-4 h-4 mr-2" />
-                        Edit
+                        {t("common.edit")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
                         onClick={() => setDeleteId(tag.id)}
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
-                        Delete
+                        {t("common.delete")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
                 <p className="font-semibold text-sm">#{tag.name}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {tag._count.transactions} transactions
+                  {tag._count.transactions} {t("tags.count")}
                 </p>
                 <div
                   className="absolute bottom-0 left-0 right-0 h-1"
@@ -220,23 +222,23 @@ export default function TagsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit Tag" : "New Tag"}</DialogTitle>
+            <DialogTitle>{editingId ? t("tags.edit") : t("tags.add")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Name</Label>
+              <Label>{t("tags.name")}</Label>
               <Input
-                placeholder="e.g. groceries, vacation, work"
+                placeholder={t("tags.namePlaceholder")}
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 onKeyDown={(e) => e.key === "Enter" && handleSave()}
               />
               <p className="text-xs text-muted-foreground">
-                Names are saved in lowercase.
+                {t("tags.nameLowercase")}
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label>Color</Label>
+              <Label>{t("tags.color")}</Label>
               <div className="flex gap-2 flex-wrap">
                 {TAG_COLORS.map((color) => (
                   <button
@@ -253,7 +255,7 @@ export default function TagsPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 pt-1">
-              <span className="text-sm text-muted-foreground">Preview:</span>
+              <span className="text-sm text-muted-foreground">{t("tags.preview")}:</span>
               <span
                 className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
                 style={{
@@ -268,10 +270,10 @@ export default function TagsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("common.loading") : t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -280,18 +282,18 @@ export default function TagsPage() {
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Tag</AlertDialogTitle>
+            <AlertDialogTitle>{t("tags.delete")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure? The tag will be removed from all transactions.
+              {t("tags.deleteConfirm")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && handleDelete(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

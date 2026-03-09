@@ -17,6 +17,7 @@ import {
   X,
   Check,
   CheckSquare,
+  RefreshCw,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -122,6 +123,7 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [tagIdFilter, setTagIdFilter] = useState(() => searchParams.get("tagId") ?? "");
+  const [accountIdFilter, setAccountIdFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -140,6 +142,11 @@ export default function TransactionsPage() {
   const [descSuggestions, setDescSuggestions] = useState<string[]>([]);
   const [showDescSuggestions, setShowDescSuggestions] = useState(false);
   const descDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [makeRecurring, setMakeRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState("MONTHLY");
+  const [recurringNextOccurrence, setRecurringNextOccurrence] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [tagCreateOpen, setTagCreateOpen] = useState(false);
 
   function handleDescriptionChange(value: string) {
     setForm((f) => ({ ...f, description: value }));
@@ -162,8 +169,17 @@ export default function TransactionsPage() {
   useEffect(() => {
     if (searchParams.get("add") === "true") {
       setEditingId(null);
-      setForm({ ...defaultForm });
+      setForm({
+        ...defaultForm,
+        date: format(new Date(), "yyyy-MM-dd"),
+        time: format(new Date(), "HH:mm"),
+      });
+      setMakeRecurring(false);
+      setRecurringFrequency("MONTHLY");
+      setRecurringNextOccurrence(format(new Date(), "yyyy-MM-dd"));
       setNewTagName("");
+      setNotesOpen(false);
+      setTagCreateOpen(false);
       setDialogOpen(true);
       router.replace("/transactions");
     }
@@ -183,12 +199,13 @@ export default function TransactionsPage() {
     ...(search && { search }),
     ...(typeFilter !== "all" && { type: typeFilter }),
     ...(tagIdFilter && { tagId: tagIdFilter }),
+    ...(accountIdFilter && { accountId: accountIdFilter }),
     ...(dateFrom && { dateFrom }),
     ...(dateTo && { dateTo }),
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["transactions", page, search, typeFilter, tagIdFilter, dateFrom, dateTo],
+    queryKey: ["transactions", page, search, typeFilter, tagIdFilter, accountIdFilter, dateFrom, dateTo],
     queryFn: async () => {
       const res = await fetch(`/api/transactions?${queryParams}`);
       if (!res.ok) throw new Error("Failed");
@@ -221,8 +238,18 @@ export default function TransactionsPage() {
 
   function openAdd() {
     setEditingId(null);
-    setForm({ ...defaultForm, bankAccountId: accounts[0]?.id ?? "" });
+    setForm({
+      ...defaultForm,
+      bankAccountId: accounts[0]?.id ?? "",
+      date: format(new Date(), "yyyy-MM-dd"),
+      time: format(new Date(), "HH:mm"),
+    });
     setNewTagName("");
+    setMakeRecurring(false);
+    setRecurringFrequency("MONTHLY");
+    setRecurringNextOccurrence(format(new Date(), "yyyy-MM-dd"));
+    setNotesOpen(false);
+    setTagCreateOpen(false);
     setDialogOpen(true);
   }
 
@@ -241,6 +268,11 @@ export default function TransactionsPage() {
       tagIds: tx.tags.map((t) => t.tag.id),
     });
     setNewTagName("");
+    setMakeRecurring(false);
+    setRecurringFrequency("MONTHLY");
+    setRecurringNextOccurrence(format(new Date(), "yyyy-MM-dd"));
+    setNotesOpen(!!tx.notes);
+    setTagCreateOpen(false);
     setDialogOpen(true);
   }
 
@@ -255,15 +287,15 @@ export default function TransactionsPage() {
 
   const handleSave = useCallback(async () => {
     if (!form.amount || !form.bankAccountId) {
-      toast.error("Please fill in all required fields");
+      toast.error(t("transactions.requiredFields"));
       return;
     }
     if (form.type === "TRANSFER" && !form.toAccountId) {
-      toast.error("Please select a destination account for the transfer");
+      toast.error(t("transactions.transferDestRequired"));
       return;
     }
     if (form.type === "TRANSFER" && form.toAccountId === form.bankAccountId) {
-      toast.error("Source and destination accounts must be different");
+      toast.error(t("transactions.transferSameAccount"));
       return;
     }
 
@@ -293,7 +325,28 @@ export default function TransactionsPage() {
         return;
       }
 
-      toast.success(editingId ? "Transaction updated!" : "Transaction added!");
+      toast.success(editingId ? t("transactions.updated") : t("transactions.added"));
+
+      if (!editingId && makeRecurring && (form.type === "INCOME" || form.type === "EXPENSE")) {
+        const recurringRes = await fetch("/api/recurring", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: form.description || "Recurring transaction",
+            amount: parseFloat(form.amount),
+            type: form.type,
+            frequency: recurringFrequency,
+            nextOccurrence: recurringNextOccurrence,
+            bankAccountId: form.bankAccountId,
+          }),
+        });
+        if (!recurringRes.ok) {
+          toast.error(t("common.error"));
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["recurring"] });
+        }
+      }
+
       setDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -301,12 +354,12 @@ export default function TransactionsPage() {
     } finally {
       setSaving(false);
     }
-  }, [form, editingId, queryClient, t]);
+  }, [form, editingId, queryClient, t, makeRecurring, recurringFrequency, recurringNextOccurrence]);
 
   async function handleDelete(id: string) {
     const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
     if (res.ok) {
-      toast.success("Transaction deleted");
+      toast.success(t("transactions.deleted"));
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     } else {
@@ -327,7 +380,7 @@ export default function TransactionsPage() {
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        toast.error(d.error || "Could not create tag");
+        toast.error(d.error || t("transactions.couldNotCreateTag"));
         return;
       }
       const { tag } = await res.json();
@@ -390,7 +443,7 @@ export default function TransactionsPage() {
         return;
       }
 
-      toast.success(`${result.deleted} transaction${result.deleted !== 1 ? "s" : ""} deleted`);
+      toast.success(t("transactions.bulkDeleted", { count: result.deleted }));
       setSelectedIds(new Set());
       setSelectMode(false);
       setSelectAllFiltered(false);
@@ -408,7 +461,7 @@ export default function TransactionsPage() {
   const deleteCount = selectAllFiltered ? (data?.total ?? 0) : selectedIds.size;
 
   return (
-    <div className="max-w-5xl space-y-4">
+    <div className="max-w-6xl space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{t("transactions.title")}</h1>
@@ -419,7 +472,7 @@ export default function TransactionsPage() {
         <div className="flex gap-2">
           <Button variant={selectMode ? "secondary" : "outline"} onClick={toggleSelectMode}>
             <CheckSquare className="w-4 h-4 mr-2" />
-            {selectMode ? "Cancel" : "Select"}
+            {selectMode ? t("common.cancel") : t("common.select")}
           </Button>
           {!selectMode && (
             <Button onClick={openAdd}>
@@ -466,6 +519,21 @@ export default function TransactionsPage() {
               </SelectContent>
             </Select>
 
+            <Select
+              value={accountIdFilter || "all"}
+              onValueChange={(v) => { setAccountIdFilter(v === "all" ? "" : v); setPage(1); }}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder={t("transactions.account")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("common.all")}</SelectItem>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Input
               type="date"
               className="w-36"
@@ -498,7 +566,7 @@ export default function TransactionsPage() {
         if (!activeTag) return null;
         return (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Filtered by tag:</span>
+            <span className="text-sm text-muted-foreground">{t("transactions.filteredByTag")}</span>
             <button
               onClick={() => { setTagIdFilter(""); setPage(1); }}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors hover:opacity-80"
@@ -523,17 +591,17 @@ export default function TransactionsPage() {
           />
           <span className="text-sm font-medium">
             {selectAllFiltered
-              ? `All ${data?.total} transactions selected`
+              ? t("transactions.allSelected", { count: data?.total })
               : selectedIds.size > 0
-              ? `${selectedIds.size} selected`
-              : "Select transactions"}
+              ? t("transactions.selected", { count: selectedIds.size })
+              : t("transactions.selectTransactions")}
           </span>
           {selectedIds.size === transactions.length && transactions.length > 0 && (data?.total ?? 0) > transactions.length && !selectAllFiltered && (
             <button
               className="text-xs text-primary hover:underline"
               onClick={() => setSelectAllFiltered(true)}
             >
-              Select all {data?.total} transactions
+              {t("transactions.selectAll", { count: data?.total })}
             </button>
           )}
           {(selectedIds.size > 0 || selectAllFiltered) && (
@@ -544,7 +612,7 @@ export default function TransactionsPage() {
               onClick={() => setBulkDeleteOpen(true)}
             >
               <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              Delete {selectAllFiltered ? `all ${data?.total}` : selectedIds.size}
+              {t("transactions.bulkDeleteConfirm", { count: selectAllFiltered ? data?.total : selectedIds.size })}
             </Button>
           )}
         </div>
@@ -686,10 +754,10 @@ export default function TransactionsPage() {
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
           >
-            Previous
+            {t("common.previous")}
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
+            {t("common.page", { page, total: totalPages })}
           </span>
           <Button
             variant="outline"
@@ -697,7 +765,7 @@ export default function TransactionsPage() {
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
           >
-            Next
+            {t("common.next")}
           </Button>
         </div>
       )}
@@ -733,7 +801,7 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label>{t("transactions.amount")} *</Label>
                 <Input
@@ -753,15 +821,14 @@ export default function TransactionsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
                 />
               </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Time</Label>
-              <Input
-                type="time"
-                value={form.time}
-                onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))}
-              />
+              <div className="space-y-1.5">
+                <Label>{t("transactions.time")}</Label>
+                <Input
+                  type="time"
+                  value={form.time}
+                  onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))}
+                />
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -799,13 +866,13 @@ export default function TransactionsPage() {
             {form.type === "TRANSFER" ? (
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>From Account *</Label>
+                  <Label>{t("transactions.fromAccount")} *</Label>
                   <Select
                     value={form.bankAccountId}
                     onValueChange={(v) => setForm((f) => ({ ...f, bankAccountId: v }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="From..." />
+                      <SelectValue placeholder={`${t("transactions.fromAccount")}...`} />
                     </SelectTrigger>
                     <SelectContent>
                       {accounts.map((a) => (
@@ -815,13 +882,13 @@ export default function TransactionsPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>To Account *</Label>
+                  <Label>{t("transactions.toAccount")} *</Label>
                   <Select
                     value={form.toAccountId}
                     onValueChange={(v) => setForm((f) => ({ ...f, toAccountId: v }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="To..." />
+                      <SelectValue placeholder={`${t("transactions.toAccount")}...`} />
                     </SelectTrigger>
                     <SelectContent>
                       {accounts
@@ -841,7 +908,7 @@ export default function TransactionsPage() {
                   onValueChange={(v) => setForm((f) => ({ ...f, bankAccountId: v }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
+                    <SelectValue placeholder={t("import.selectAccount")} />
                   </SelectTrigger>
                   <SelectContent>
                     {accounts.map((a) => (
@@ -853,7 +920,17 @@ export default function TransactionsPage() {
             )}
 
             <div className="space-y-2">
-              <Label>Tags</Label>
+              <div className="flex items-center justify-between">
+                <Label>{t("transactions.tags")}</Label>
+                <button
+                  type="button"
+                  onClick={() => setTagCreateOpen((v) => !v)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  title={t("common.add")}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
               {tags.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {tags.map((tag) => {
@@ -882,42 +959,102 @@ export default function TransactionsPage() {
                   })}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">
-                  No tags yet. Create one below or visit the{" "}
-                  <a href="/tags" className="text-primary hover:underline">Tags page</a>.
-                </p>
+                <p className="text-xs text-muted-foreground">{t("tags.noTagsDesc")}</p>
               )}
-              <div className="flex gap-1.5 mt-1">
-                <Input
-                  placeholder="New tag name..."
-                  value={newTagName}
-                  onChange={(e) => setNewTagName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), createTagInline())}
-                  className="h-7 text-xs"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-2 text-xs shrink-0"
-                  onClick={createTagInline}
-                  disabled={creatingTag || !newTagName.trim()}
-                >
-                  <Plus className="w-3 h-3 mr-1" />
-                  Add
-                </Button>
-              </div>
+              {tagCreateOpen && (
+                <div className="flex gap-1.5">
+                  <Input
+                    placeholder={t("import.tagPlaceholder")}
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), createTagInline())}
+                    className="h-7 text-xs"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-xs shrink-0"
+                    onClick={createTagInline}
+                    disabled={creatingTag || !newTagName.trim()}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    {t("common.add")}
+                  </Button>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-1.5">
-              <Label>{t("transactions.notes")}</Label>
-              <Textarea
-                placeholder={t("transactions.notesPlaceholder")}
-                value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                rows={2}
-              />
-            </div>
+            {!editingId && form.type !== "TRANSFER" && (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setMakeRecurring((v) => !v)}
+                  className={cn(
+                    "flex items-center gap-2 text-sm font-medium rounded-lg px-3 py-2 w-full border transition-colors",
+                    makeRecurring
+                      ? "border-primary/50 bg-primary/5 text-primary"
+                      : "border-border text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  )}
+                >
+                  <RefreshCw className={cn("w-4 h-4", makeRecurring && "text-primary")} />
+                  {t("recurring.add")}
+                  {makeRecurring && <Check className="w-3.5 h-3.5 ml-auto" />}
+                </button>
+
+                {makeRecurring && (
+                  <div className="grid grid-cols-2 gap-3 pl-1">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">{t("recurring.frequency.label")}</Label>
+                      <Select value={recurringFrequency} onValueChange={setRecurringFrequency}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(["DAILY","WEEKLY","BIWEEKLY","MONTHLY","YEARLY"] as const).map((f) => (
+                            <SelectItem key={f} value={f}>
+                              {t(`recurring.frequency.${f.toLowerCase()}` as Parameters<typeof t>[0])}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">{t("recurring.nextOccurrence")}</Label>
+                      <Input
+                        type="date"
+                        className="h-8 text-sm"
+                        value={recurringNextOccurrence}
+                        onChange={(e) => setRecurringNextOccurrence(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {notesOpen ? (
+              <div className="space-y-1.5">
+                <Label>{t("transactions.notes")}</Label>
+                <Textarea
+                  placeholder={t("transactions.notesPlaceholder")}
+                  value={form.notes}
+                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  autoFocus
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setNotesOpen(true)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                {t("transactions.addNotes")}
+              </button>
+            )}
           </div>
 
           <DialogFooter>
@@ -934,10 +1071,9 @@ export default function TransactionsPage() {
       <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {deleteCount} transaction{deleteCount !== 1 ? "s" : ""}?</AlertDialogTitle>
+            <AlertDialogTitle>{t("transactions.bulkDeleteTitle", { count: deleteCount })}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete {deleteCount} transaction{deleteCount !== 1 ? "s" : ""} and
-              reverse their effect on account balances. This cannot be undone.
+              {t("transactions.bulkDeleteDesc", { count: deleteCount })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -947,7 +1083,7 @@ export default function TransactionsPage() {
               disabled={bulkDeleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {bulkDeleting ? "Deleting..." : `Delete ${deleteCount}`}
+              {bulkDeleting ? t("transactions.deleting") : t("transactions.bulkDeleteConfirm", { count: deleteCount })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

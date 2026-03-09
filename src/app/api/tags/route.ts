@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { tagSchema } from "@/lib/validations";
+import { demoGuard } from "@/lib/demo";
 
 export async function GET() {
   const session = await getSession();
@@ -19,6 +20,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const body = await request.json();
   const parsed = tagSchema.safeParse(body);

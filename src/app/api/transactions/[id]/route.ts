@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { transactionSchema } from "@/lib/validations";
+import { demoGuard } from "@/lib/demo";
 
 export async function GET(
   _request: NextRequest,
@@ -30,6 +31,7 @@ export async function PUT(
 ) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const { id } = await params;
   const body = await request.json();
@@ -46,69 +48,75 @@ export async function PUT(
   const { tags, ...txData } = parsed.data;
 
   try {
-    if (existing.type === "TRANSFER") {
-      await prisma.bankAccount.update({
-        where: { id: existing.bankAccountId },
-        data: { currentBalance: { increment: existing.amount } },
-      });
-      if (existing.toAccountId) {
-        await prisma.bankAccount.update({
-          where: { id: existing.toAccountId },
-          data: { currentBalance: { decrement: existing.amount } },
+    const transaction = await prisma.$transaction(async (tx) => {
+      // Reverse old balance effect
+      if (existing.type === "TRANSFER") {
+        await tx.bankAccount.update({
+          where: { id: existing.bankAccountId },
+          data: { currentBalance: { increment: existing.amount } },
+        });
+        if (existing.toAccountId) {
+          await tx.bankAccount.update({
+            where: { id: existing.toAccountId },
+            data: { currentBalance: { decrement: existing.amount } },
+          });
+        }
+      } else {
+        const oldDelta = existing.type === "INCOME" ? -existing.amount : existing.amount;
+        await tx.bankAccount.update({
+          where: { id: existing.bankAccountId },
+          data: { currentBalance: { increment: oldDelta } },
         });
       }
-    } else {
-      const oldDelta = existing.type === "INCOME" ? -existing.amount : existing.amount;
-      await prisma.bankAccount.update({
-        where: { id: existing.bankAccountId },
-        data: { currentBalance: { increment: oldDelta } },
+
+      const newType = txData.type ?? existing.type;
+      const toAccountId = txData.toAccountId !== undefined
+        ? (txData.toAccountId || null)
+        : (newType === "TRANSFER" ? existing.toAccountId : null);
+
+      const updated = await tx.transaction.update({
+        where: { id },
+        data: {
+          ...txData,
+          toAccountId,
+          date: txData.date ? new Date(txData.date as string) : undefined,
+          tags: tags !== undefined ? {
+            deleteMany: {},
+            create: tags.map((tagId) => ({ tagId })),
+          } : undefined,
+        },
+        include: {
+          bankAccount: { select: { id: true, name: true, currency: true } },
+          toAccount: { select: { id: true, name: true, currency: true } },
+          tags: { include: { tag: true } },
+        },
       });
-    }
 
-    const newType = txData.type ?? existing.type;
-    const toAccountId = txData.toAccountId !== undefined
-      ? (txData.toAccountId || null)
-      : (newType === "TRANSFER" ? existing.toAccountId : null);
+      // Apply new balance effect
+      const newAmount = txData.amount ?? existing.amount;
+      const accountId = txData.bankAccountId ?? existing.bankAccountId;
 
-    const transaction = await prisma.transaction.update({
-      where: { id },
-      data: {
-        ...txData,
-        toAccountId,
-        date: txData.date ? new Date(txData.date as string) : undefined,
-        tags: tags !== undefined ? {
-          deleteMany: {},
-          create: tags.map((tagId) => ({ tagId })),
-        } : undefined,
-      },
-      include: {
-        bankAccount: { select: { id: true, name: true, currency: true } },
-        toAccount: { select: { id: true, name: true, currency: true } },
-        tags: { include: { tag: true } },
-      },
+      if (newType === "TRANSFER") {
+        await tx.bankAccount.update({
+          where: { id: accountId },
+          data: { currentBalance: { decrement: newAmount } },
+        });
+        if (toAccountId) {
+          await tx.bankAccount.update({
+            where: { id: toAccountId },
+            data: { currentBalance: { increment: newAmount } },
+          });
+        }
+      } else {
+        const newDelta = newType === "INCOME" ? newAmount : -newAmount;
+        await tx.bankAccount.update({
+          where: { id: accountId },
+          data: { currentBalance: { increment: newDelta } },
+        });
+      }
+
+      return updated;
     });
-
-    const newAmount = txData.amount ?? existing.amount;
-    const accountId = txData.bankAccountId ?? existing.bankAccountId;
-
-    if (newType === "TRANSFER") {
-      await prisma.bankAccount.update({
-        where: { id: accountId },
-        data: { currentBalance: { decrement: newAmount } },
-      });
-      if (toAccountId) {
-        await prisma.bankAccount.update({
-          where: { id: toAccountId },
-          data: { currentBalance: { increment: newAmount } },
-        });
-      }
-    } else {
-      const newDelta = newType === "INCOME" ? newAmount : -newAmount;
-      await prisma.bankAccount.update({
-        where: { id: accountId },
-        data: { currentBalance: { increment: newDelta } },
-      });
-    }
 
     return NextResponse.json({ transaction });
   } catch (error) {
@@ -123,6 +131,7 @@ export async function DELETE(
 ) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const { id } = await params;
   const transaction = await prisma.transaction.findFirst({
@@ -130,26 +139,28 @@ export async function DELETE(
   });
   if (!transaction) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.transaction.delete({ where: { id } });
+  await prisma.$transaction(async (tx) => {
+    await tx.transaction.delete({ where: { id } });
 
-  if (transaction.type === "TRANSFER") {
-    await prisma.bankAccount.update({
-      where: { id: transaction.bankAccountId },
-      data: { currentBalance: { increment: transaction.amount } },
-    });
-    if (transaction.toAccountId) {
-      await prisma.bankAccount.update({
-        where: { id: transaction.toAccountId },
-        data: { currentBalance: { decrement: transaction.amount } },
+    if (transaction.type === "TRANSFER") {
+      await tx.bankAccount.update({
+        where: { id: transaction.bankAccountId },
+        data: { currentBalance: { increment: transaction.amount } },
+      });
+      if (transaction.toAccountId) {
+        await tx.bankAccount.update({
+          where: { id: transaction.toAccountId },
+          data: { currentBalance: { decrement: transaction.amount } },
+        });
+      }
+    } else {
+      const delta = transaction.type === "INCOME" ? -transaction.amount : transaction.amount;
+      await tx.bankAccount.update({
+        where: { id: transaction.bankAccountId },
+        data: { currentBalance: { increment: delta } },
       });
     }
-  } else {
-    const delta = transaction.type === "INCOME" ? -transaction.amount : transaction.amount;
-    await prisma.bankAccount.update({
-      where: { id: transaction.bankAccountId },
-      data: { currentBalance: { increment: delta } },
-    });
-  }
+  });
 
   return NextResponse.json({ success: true });
 }
