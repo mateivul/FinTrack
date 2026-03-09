@@ -3,8 +3,17 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/auth";
 import { loginSchema } from "@/lib/validations";
+import { rateLimit, getIp } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  const { allowed, retryAfterSeconds } = rateLimit(getIp(request), "login", 10, 15 * 60 * 1000);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many login attempts. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
+  }
+
   try {
     const body = await request.json();
     const parsed = loginSchema.safeParse(body);
@@ -51,6 +60,8 @@ export async function POST(request: NextRequest) {
     session.name = user.name;
     session.language = user.language as "EN" | "RO";
     session.theme = user.theme as "LIGHT" | "DARK" | "SYSTEM";
+    session.isDemo = false;
+    session.isDemoSession = false;
     await session.save();
 
     return response;

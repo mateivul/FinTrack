@@ -43,7 +43,9 @@ export default function RegisterPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (res.status === 409) {
+        if (res.status === 429) {
+          toast.error(t("auth.errors.tooManyAttempts"));
+        } else if (res.status === 409) {
           toast.error(t("auth.errors.emailTaken"));
         } else {
           toast.error(data.error || t("common.error"));
@@ -51,7 +53,7 @@ export default function RegisterPage() {
         return;
       }
 
-      toast.success("Account created! Welcome to FinTrack 🎉");
+      toast.success(t("auth.accountCreated"));
       router.push("/");
     } catch {
       toast.error(t("errors.networkError"));

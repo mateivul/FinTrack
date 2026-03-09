@@ -18,7 +18,7 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ user });
+    return NextResponse.json({ user: { ...user, isDemo: session.isDemoSession ?? session.isDemo ?? false } });
   } catch (error) {
     console.error("Me error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

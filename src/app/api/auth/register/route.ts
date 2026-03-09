@@ -3,8 +3,17 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/auth";
 import { registerSchema } from "@/lib/validations";
+import { rateLimit, getIp } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
+  const { allowed, retryAfterSeconds } = rateLimit(getIp(request), "register", 5, 15 * 60 * 1000);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many registration attempts. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
+  }
+
   try {
     const body = await request.json();
     const parsed = registerSchema.safeParse(body);
@@ -26,13 +35,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({
       data: {
         name,
         email,
         passwordHash,
+        emailVerified: true,
         bankAccounts: {
           create: [
             {
@@ -56,10 +66,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const response = NextResponse.json(
-      { success: true, user: { id: user.id, email: user.email, name: user.name } },
-      { status: 201 }
-    );
+    const response = NextResponse.json({ success: true }, { status: 201 });
 
     const session = await getSessionFromRequest(request, response);
     session.userId = user.id;
@@ -67,6 +74,8 @@ export async function POST(request: NextRequest) {
     session.name = user.name;
     session.language = user.language as "EN" | "RO";
     session.theme = user.theme as "LIGHT" | "DARK" | "SYSTEM";
+    session.isDemo = false;
+    session.isDemoSession = false;
     await session.save();
 
     return response;

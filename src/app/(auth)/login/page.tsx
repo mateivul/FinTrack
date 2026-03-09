@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Eye, EyeOff, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export default function LoginPage() {
   const t = useTranslations();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
 
@@ -32,16 +35,38 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || t("auth.errors.invalidCredentials"));
+        if (res.status === 429) {
+          toast.error(t("auth.errors.tooManyAttempts"));
+        } else {
+          toast.error(data.error || t("auth.errors.invalidCredentials"));
+        }
         return;
       }
 
       toast.success(t("auth.welcomeBack"));
+      queryClient.clear();
       router.push("/");
     } catch {
       toast.error(t("errors.networkError"));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDemo() {
+    setDemoLoading(true);
+    try {
+      const res = await fetch("/api/auth/demo", { method: "POST" });
+      if (!res.ok) {
+        toast.error("Demo account is not available right now.");
+        return;
+      }
+      queryClient.clear();
+      router.push("/");
+    } catch {
+      toast.error(t("errors.networkError"));
+    } finally {
+      setDemoLoading(false);
     }
   }
 
@@ -108,10 +133,34 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading} size="lg">
+              <Button type="submit" className="w-full" disabled={loading || demoLoading} size="lg">
                 {loading ? t("common.loading") : t("auth.login")}
               </Button>
             </form>
+
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white dark:bg-gray-900 px-2 text-muted-foreground">{t("common.or")}</span>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={handleDemo}
+              disabled={loading || demoLoading}
+              size="lg"
+            >
+              {demoLoading ? t("common.loading") : "Try Demo"}
+            </Button>
+
+            <p className="text-center text-xs text-muted-foreground mt-3">
+              Demo mode: explore freely — changes reset when you log out.
+            </p>
           </CardContent>
         </Card>
       </div>

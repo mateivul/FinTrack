@@ -8,6 +8,8 @@ export interface SessionData {
   name: string;
   language: "EN" | "RO";
   theme: "LIGHT" | "DARK" | "SYSTEM";
+  isDemo?: boolean;
+  isDemoSession?: boolean;
 }
 
 export const sessionOptions: SessionOptions = {
@@ -17,7 +19,18 @@ export const sessionOptions: SessionOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    maxAge: 60 * 60 * 24 * 30,
+  },
+};
+
+export const demoSessionOptions: SessionOptions = {
+  password: process.env.SESSION_SECRET!,
+  cookieName: "fintrack-session",
+  cookieOptions: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 2,
   },
 };
 
