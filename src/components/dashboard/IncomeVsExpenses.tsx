@@ -25,8 +25,46 @@ interface IncomeVsExpensesProps {
   currency?: string;
 }
 
+function CustomTooltip({
+  active,
+  payload,
+  label,
+  currency,
+  incomeLabel,
+  expenseLabel,
+}: {
+  active?: boolean;
+  payload?: Array<{ dataKey: string; value: number; color: string }>;
+  label?: string;
+  currency: string;
+  incomeLabel: string;
+  expenseLabel: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-border bg-popover px-3 py-2 shadow-md min-w-[140px]">
+      <p className="text-sm font-semibold text-popover-foreground mb-1">{label}</p>
+      {payload.map((entry) => (
+        <div key={entry.dataKey} className="flex items-center justify-between gap-4 text-sm">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+            <span className="text-popover-foreground">
+              {entry.dataKey === "income" ? incomeLabel : expenseLabel}
+            </span>
+          </div>
+          <span className="font-medium text-popover-foreground">
+            {formatCurrency(entry.value, currency)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function IncomeVsExpenses({ data, currency = "RON" }: IncomeVsExpensesProps) {
   const t = useTranslations();
+  const incomeLabel = t("transactions.income");
+  const expenseLabel = t("transactions.expense");
 
   return (
     <Card>
@@ -36,36 +74,35 @@ export function IncomeVsExpenses({ data, currency = "RON" }: IncomeVsExpensesPro
       <CardContent>
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={data} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis
               dataKey="month"
-              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
-              tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+              tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`}
+              tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}
             />
             <Tooltip
-              formatter={(value: unknown, name: unknown) => [
-                formatCurrency(Number(value), currency),
-                name === "income" ? t("transactions.income") : t("transactions.expense"),
-              ]}
-              contentStyle={{
-                borderRadius: "0.75rem",
-                border: "1px solid hsl(var(--border))",
-                backgroundColor: "hsl(var(--card))",
-              }}
+              content={
+                <CustomTooltip
+                  currency={currency}
+                  incomeLabel={incomeLabel}
+                  expenseLabel={expenseLabel}
+                />
+              }
+              wrapperStyle={{ backgroundColor: "transparent", border: "none", boxShadow: "none", padding: 0 }}
             />
             <Legend
               iconType="circle"
               iconSize={8}
               formatter={(value) => (
                 <span className="text-xs text-muted-foreground">
-                  {value === "income" ? t("transactions.income") : t("transactions.expense")}
+                  {value === "income" ? incomeLabel : expenseLabel}
                 </span>
               )}
             />

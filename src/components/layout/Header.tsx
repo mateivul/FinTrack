@@ -38,11 +38,12 @@ export function Header({ onMenuClick, user }: HeaderProps) {
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
+    router.refresh();
   }
 
   async function handleLanguageChange(lang: "en" | "ro") {
     document.cookie = `locale=${lang}; path=/; max-age=31536000`;
-    toast.success(lang === "en" ? "Language changed to English" : "Limbă schimbată în Română");
+    toast.success(lang === "en" ? t("settings.languageChangedEn") : t("settings.languageChangedRo"));
     router.refresh();
   }
 

@@ -17,18 +17,22 @@ import {
   TrendingUp,
   Tag,
   X,
+  History,
+  Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
-  { href: "/", icon: LayoutDashboard, labelKey: "nav.dashboard" },
+  { href: "/", icon: LayoutDashboard, labelKey: "nav.dashboard", exact: true },
   { href: "/transactions", icon: ArrowLeftRight, labelKey: "nav.transactions" },
   { href: "/accounts", icon: Wallet, labelKey: "nav.accounts" },
   { href: "/tags", icon: Tag, labelKey: "nav.tags" },
   { href: "/budgets", icon: Target, labelKey: "nav.budgets" },
   { href: "/savings", icon: PiggyBank, labelKey: "nav.savings" },
   { href: "/recurring", icon: RefreshCw, labelKey: "nav.recurring" },
-  { href: "/import", icon: Upload, labelKey: "nav.import" },
+  { href: "/import", icon: Upload, labelKey: "nav.import", exact: true },
+  { href: "/import/history", icon: History, labelKey: "nav.importHistory" },
+  { href: "/import/rules", icon: Wand2, labelKey: "nav.importRules" },
   { href: "/reports", icon: BarChart3, labelKey: "nav.reports" },
   { href: "/settings", icon: Settings, labelKey: "nav.settings" },
 ];
@@ -82,10 +86,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const isActive =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href);
+            const isActive = item.exact
+              ? pathname === item.href
+              : pathname.startsWith(item.href);
 
             return (
               <Link

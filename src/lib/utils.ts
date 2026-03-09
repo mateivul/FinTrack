@@ -18,12 +18,12 @@ export function formatCurrency(
   };
 
   try {
-    return new Intl.NumberFormat(localeMap[locale] ?? "en-US", {
-      style: "currency",
-      currency,
+    const absFormatted = new Intl.NumberFormat(localeMap[locale] ?? "en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(Math.abs(amount));
+    const sign = amount < 0 ? "-" : "";
+    return `${sign}${absFormatted} ${currency}`;
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
@@ -36,10 +36,9 @@ export function formatDate(date: Date | string, locale = "en"): string {
   return format(d, pattern, { locale: dateLocale });
 }
 
-/** Returns "HH:mm" if the time is not midnight, otherwise "" */
 export function formatTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
-  if (d.getHours() === 0 && d.getMinutes() === 0) return "";
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0) return "";
   return format(d, "HH:mm");
 }
 
@@ -70,7 +69,7 @@ export function getTransactionTypeColor(type: string): string {
 }
 
 export function getProgressColor(percentage: number): string {
-  if (percentage < 50) return "bg-emerald-500";
+  if (percentage < 60) return "bg-emerald-500";
   if (percentage < 80) return "bg-yellow-500";
   if (percentage < 100) return "bg-orange-500";
   return "bg-red-500";

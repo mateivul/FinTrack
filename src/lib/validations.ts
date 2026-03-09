@@ -35,7 +35,7 @@ export const transactionSchema = z.object({
 
 export const budgetSchema = z.object({
   name: z.string().min(1, "Budget name is required"),
-  tagId: z.string().optional(),
+  tagId: z.string().nullable().optional(),
   amount: z.number().positive("Amount must be positive"),
   period: z.enum(["WEEKLY", "MONTHLY", "YEARLY"]).default("MONTHLY"),
   alertThreshold: z.number().min(0).max(1).default(0.8),

@@ -58,7 +58,7 @@ export function SpendingByCategory({
     color: item.tag.color,
   }));
 
-  const total = chartData.reduce((sum, item) => sum + item.value, 0);
+  const total = data.reduce((sum, item) => sum + item.amount, 0);
 
   if (data.length === 0) {
     return (
@@ -94,7 +94,10 @@ export function SpendingByCategory({
                 <Cell key={`cell-${index}`} fill={entry.color} />
               ))}
             </Pie>
-            <Tooltip content={<CustomTooltip currency={currency} />} />
+            <Tooltip
+              content={<CustomTooltip currency={currency} />}
+              wrapperStyle={{ backgroundColor: "transparent", border: "none", boxShadow: "none", padding: 0 }}
+            />
             <Legend
               iconType="circle"
               iconSize={8}

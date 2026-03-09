@@ -32,21 +32,20 @@ export function StatCard({
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground font-medium">{title}</p>
             <p className="text-2xl font-bold animate-count">{value}</p>
-            {trend !== undefined && (
-              <div className={cn(
-                "flex items-center gap-1 text-xs font-medium",
-                isPositive ? "text-emerald-500" : "text-red-500"
-              )}>
-                {isPositive ? (
-                  <TrendingUp className="w-3 h-3" />
-                ) : (
-                  <TrendingDown className="w-3 h-3" />
-                )}
-                <span>
-                  {Math.abs(trend).toFixed(1)}% {trendLabel}
-                </span>
-              </div>
-            )}
+            <div className={cn(
+              "flex items-center gap-1 text-xs font-medium h-4",
+              trend === undefined && "invisible",
+              isPositive ? "text-emerald-500" : "text-red-500"
+            )}>
+              {isPositive ? (
+                <TrendingUp className="w-3 h-3" />
+              ) : (
+                <TrendingDown className="w-3 h-3" />
+              )}
+              <span>
+                {trend !== undefined ? `${Math.abs(trend).toFixed(1)}% ${trendLabel}` : "—"}
+              </span>
+            </div>
           </div>
           <div
             className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
