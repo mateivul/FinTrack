@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Sun, Moon, Monitor, Globe, User, Lock, Trash2 } from "lucide-react";
+import { Sun, Moon, Monitor, Globe, User, Lock, Trash2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,15 +42,17 @@ export default function SettingsPage() {
     queryKey: ["me"],
     queryFn: async () => {
       const res = await fetch("/api/auth/me");
-      const json = await res.json();
-      if (json.user) {
-        setProfileForm({ name: json.user.name });
-      }
-      return json;
+      return res.json();
     },
   });
 
   const user = data?.user;
+
+  useEffect(() => {
+    if (user?.name && !profileForm.name) {
+      setProfileForm({ name: user.name });
+    }
+  }, [user?.name]);
 
   async function handleProfileSave() {
     setSavingProfile(true);
@@ -87,7 +89,7 @@ export default function SettingsPage() {
         }),
       });
       if (res.ok) {
-        toast.success("Password changed successfully!");
+        toast.success(t("settings.passwordUpdated"));
         setPasswordForm({ currentPassword: "", newPassword: "", confirmNewPassword: "" });
       } else {
         const d = await res.json();
@@ -105,7 +107,7 @@ export default function SettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ language: lang.toUpperCase() }),
     });
-    toast.success(lang === "en" ? "Language changed to English" : "Limbă schimbată în Română");
+    toast.success(lang === "en" ? t("settings.languageChangedEn") : t("settings.languageChangedRo"));
     router.refresh();
   }
 
@@ -123,152 +125,176 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">{t("settings.title")}</h1>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Monitor className="w-5 h-5" />
-            {t("settings.theme")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-3">
-            {THEMES.map(({ value, label, icon }) => (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Monitor className="w-5 h-5" />
+              {t("settings.theme")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-3">
+              {THEMES.map(({ value, label, icon }) => (
+                <button
+                  key={value}
+                  onClick={() => setTheme(value)}
+                  className={cn(
+                    "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
+                    theme === value
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-accent"
+                  )}
+                >
+                  {icon}
+                  <span className="text-sm font-medium">{label}</span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="w-5 h-5" />
+              {t("settings.language")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
               <button
-                key={value}
-                onClick={() => setTheme(value)}
-                className={cn(
-                  "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
-                  theme === value
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:bg-accent"
-                )}
+                onClick={() => handleLanguageChange("en")}
+                className="flex items-center gap-3 p-4 rounded-xl border-2 border-border hover:bg-accent transition-all"
               >
-                {icon}
-                <span className="text-sm font-medium">{label}</span>
+                <span className="text-2xl">🇬🇧</span>
+                <div className="text-left">
+                  <p className="font-semibold">English</p>
+                  <p className="text-xs text-muted-foreground">en</p>
+                </div>
               </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              <button
+                onClick={() => handleLanguageChange("ro")}
+                className="flex items-center gap-3 p-4 rounded-xl border-2 border-border hover:bg-accent transition-all"
+              >
+                <span className="text-2xl">🇷🇴</span>
+                <div className="text-left">
+                  <p className="font-semibold">Română</p>
+                  <p className="text-xs text-muted-foreground">ro</p>
+                </div>
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="w-5 h-5" />
-            {t("settings.language")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => handleLanguageChange("en")}
-              className="flex items-center gap-3 p-4 rounded-xl border-2 border-border hover:bg-accent transition-all"
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <User className="w-5 h-5" />
+              {t("settings.profile")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>{t("settings.name")}</Label>
+              <Input
+                value={profileForm.name}
+                onChange={(e) => setProfileForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("settings.email")}</Label>
+              <Input value={user?.email ?? ""} disabled />
+            </div>
+            <Button onClick={handleProfileSave} disabled={savingProfile}>
+              {savingProfile ? t("common.loading") : t("common.save")}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Lock className="w-5 h-5" />
+              {t("settings.changePassword")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>{t("settings.currentPassword")}</Label>
+              <Input
+                type="password"
+                value={passwordForm.currentPassword}
+                onChange={(e) => setPasswordForm((f) => ({ ...f, currentPassword: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("settings.newPassword")}</Label>
+              <Input
+                type="password"
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm((f) => ({ ...f, newPassword: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("settings.confirmNewPassword")}</Label>
+              <Input
+                type="password"
+                value={passwordForm.confirmNewPassword}
+                onChange={(e) => setPasswordForm((f) => ({ ...f, confirmNewPassword: e.target.value }))}
+              />
+            </div>
+            <Button onClick={handlePasswordSave} disabled={savingPassword}>
+              {savingPassword ? t("common.loading") : t("settings.changePassword")}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="w-5 h-5" />
+              {t("settings.exportData")}
+            </CardTitle>
+            <CardDescription>{t("settings.exportDataDesc")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" asChild>
+              <a href="/api/user/export" download>
+                <Download className="w-4 h-4 mr-2" />
+                {t("settings.exportData")}
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              {t("settings.dangerZone")}
+            </CardTitle>
+            <CardDescription>{t("settings.deleteAccountConfirm")}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="destructive"
+              onClick={() => { setDeleteStep(1); setDeleteConfirmEmail(""); }}
             >
-              <span className="text-2xl">🇬🇧</span>
-              <div className="text-left">
-                <p className="font-semibold">English</p>
-                <p className="text-xs text-muted-foreground">en</p>
-              </div>
-            </button>
-            <button
-              onClick={() => handleLanguageChange("ro")}
-              className="flex items-center gap-3 p-4 rounded-xl border-2 border-border hover:bg-accent transition-all"
-            >
-              <span className="text-2xl">🇷🇴</span>
-              <div className="text-left">
-                <p className="font-semibold">Română</p>
-                <p className="text-xs text-muted-foreground">ro</p>
-              </div>
-            </button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="w-5 h-5" />
-            {t("settings.profile")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>{t("settings.name")}</Label>
-            <Input
-              value={profileForm.name}
-              onChange={(e) => setProfileForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t("settings.email")}</Label>
-            <Input value={user?.email ?? ""} disabled />
-          </div>
-          <Button onClick={handleProfileSave} disabled={savingProfile}>
-            {savingProfile ? t("common.loading") : t("common.save")}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Lock className="w-5 h-5" />
-            {t("settings.changePassword")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>{t("settings.currentPassword")}</Label>
-            <Input
-              type="password"
-              value={passwordForm.currentPassword}
-              onChange={(e) => setPasswordForm((f) => ({ ...f, currentPassword: e.target.value }))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t("settings.newPassword")}</Label>
-            <Input
-              type="password"
-              value={passwordForm.newPassword}
-              onChange={(e) => setPasswordForm((f) => ({ ...f, newPassword: e.target.value }))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{t("settings.confirmNewPassword")}</Label>
-            <Input
-              type="password"
-              value={passwordForm.confirmNewPassword}
-              onChange={(e) => setPasswordForm((f) => ({ ...f, confirmNewPassword: e.target.value }))}
-            />
-          </div>
-          <Button onClick={handlePasswordSave} disabled={savingPassword}>
-            {savingPassword ? t("common.loading") : t("settings.changePassword")}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="border-destructive/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-destructive">
-            <Trash2 className="w-5 h-5" />
-            {t("settings.dangerZone")}
-          </CardTitle>
-          <CardDescription>{t("settings.deleteAccountConfirm")}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            variant="destructive"
-            onClick={() => { setDeleteStep(1); setDeleteConfirmEmail(""); }}
-          >
-            {t("settings.deleteAccount")}
-          </Button>
-        </CardContent>
-      </Card>
+              {t("settings.deleteAccount")}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
 
       <Dialog open={deleteStep > 0} onOpenChange={(o) => !o && setDeleteStep(0)}>
         <DialogContent>
@@ -284,7 +310,7 @@ export default function SettingsPage() {
                   variant="destructive"
                   onClick={() => { setDeleteStep(2); setDeleteConfirmEmail(""); }}
                 >
-                  Continue
+                  {t("settings.deleteConfirmContinue")}
                 </Button>
               </DialogFooter>
             </>
@@ -292,10 +318,11 @@ export default function SettingsPage() {
           {deleteStep === 2 && (
             <>
               <DialogHeader>
-                <DialogTitle>Are you absolutely sure?</DialogTitle>
+                <DialogTitle>{t("settings.deleteConfirmTitle")}</DialogTitle>
                 <DialogDescription>
-                  This will permanently delete your account and all your data. Type your email{" "}
-                  <span className="font-semibold text-foreground">{user?.email}</span> to confirm.
+                  {t("settings.deleteConfirmDesc")}{" "}
+                  <span className="font-semibold text-foreground">{user?.email}</span>{" "}
+                  {t("settings.deleteConfirmDescSuffix")}
                 </DialogDescription>
               </DialogHeader>
               <Input
