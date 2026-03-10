@@ -3,14 +3,18 @@ import { revolutParser } from "./revolut-parser";
 import { btParser } from "./bt-parser";
 import { ingParser } from "./ing-parser";
 import { bcrParser } from "./bcr-parser";
+import { n26Parser } from "./n26-parser";
+import { wiseParser } from "./wise-parser";
 import { genericParser } from "./generic-parser";
 
 export type { BankParser, ParsedTransaction };
-export { revolutParser, btParser, ingParser, bcrParser, genericParser };
+export { revolutParser, btParser, ingParser, bcrParser, n26Parser, wiseParser, genericParser };
 
 const PARSERS: BankParser[] = [
   revolutParser,
-  bcrParser,
+  n26Parser,
+  wiseParser,
+  bcrParser, 
   btParser,
   ingParser,
 ];

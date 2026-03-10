@@ -2,75 +2,103 @@ import Papa from "papaparse";
 import type { BankParser, ParsedTransaction } from "./base-parser";
 import { cleanAmount, parseEuropeanDate } from "./base-parser";
 
+
 export const revolutParser: BankParser = {
   bankName: "Revolut",
   supportedFormats: ["csv"],
 
   detect(content: string): boolean {
-    const firstLine = content.split("\n")[0].toLowerCase();
-    return (
-      firstLine.includes("type") &&
-      firstLine.includes("product") &&
-      firstLine.includes("started date") &&
-      firstLine.includes("completed date")
-    ) || (
-      firstLine.includes("date") &&
-      firstLine.includes("description") &&
-      firstLine.includes("paid out") &&
-      firstLine.includes("paid in")
-    );
+    const first = content.split("\n")[0].toLowerCase();
+    if (
+      first.includes("started date") ||
+      (first.includes("type") && first.includes("product") && first.includes("completed date"))
+    ) return true;
+    if (first.includes("paid out") && first.includes("paid in")) return true;
+    return false;
   },
 
   parse(content: string): ParsedTransaction[] {
-    const transactions: ParsedTransaction[] = [];
-
     const result = Papa.parse<Record<string, string>>(content, {
       header: true,
       skipEmptyLines: true,
-      transformHeader: (h) => h.trim(),
+      transformHeader: (h) => h.trim().toLowerCase(),
     });
 
+    const transactions: ParsedTransaction[] = [];
+
     for (const row of result.data) {
-      const dateStr =
-        row["Started Date"] || row["Completed Date"] || row["Date"] || "";
-      const description =
-        row["Description"] || row["Reference"] || row["Counterparty"] || "";
-      const paidOut = row["Paid Out (EUR)"] || row["Paid Out"] || row["Amount"] || "";
-      const paidIn = row["Paid In (EUR)"] || row["Paid In"] || "";
-      const type = row["Type"] || "";
-      const state = row["State"] || row["Status"] || "COMPLETED";
-
-      if (state.toUpperCase() === "FAILED" || state.toUpperCase() === "DECLINED") {
-        continue;
-      }
-
-      const date = parseEuropeanDate(dateStr.split(" ")[0]);
+      const rawDate =
+        row["started date"] ||
+        row["completed date"] ||
+        row["date"] ||
+        "";
+      const date = parseEuropeanDate(rawDate.split(" ")[0]);
       if (!date) continue;
+
+      const state = (row["state"] || row["status"] || "COMPLETED").toUpperCase();
+      if (["FAILED", "DECLINED", "REVERTED", "PENDING"].includes(state)) continue;
+
+      const description =
+        row["description"] ||
+        row["counterparty"] ||
+        row["reference"] ||
+        "";
+      if (!description.trim()) continue;
 
       let amount = 0;
       let txType: "INCOME" | "EXPENSE" | "TRANSFER" = "EXPENSE";
 
-      if (paidIn && cleanAmount(paidIn) > 0) {
-        amount = cleanAmount(paidIn);
+      const paidOutRaw =
+        row["paid out (eur)"] || row["paid out (gbp)"] || row["paid out (usd)"] ||
+        row["paid out"] || row["debit"] || "";
+      const paidInRaw =
+        row["paid in (eur)"] || row["paid in (gbp)"] || row["paid in (usd)"] ||
+        row["paid in"] || row["credit"] || "";
+
+      if (paidInRaw && cleanAmount(paidInRaw) > 0) {
+        amount = cleanAmount(paidInRaw);
         txType = "INCOME";
-      } else if (paidOut && cleanAmount(paidOut) > 0) {
-        amount = cleanAmount(paidOut);
+      } else if (paidOutRaw && cleanAmount(paidOutRaw) > 0) {
+        amount = cleanAmount(paidOutRaw);
         txType = "EXPENSE";
-      } else if (row["Amount"]) {
-        const rawAmount = cleanAmount(row["Amount"]);
-        if (rawAmount > 0) {
-          amount = rawAmount;
+      } else if (row["amount"] !== undefined) {
+        const raw = cleanAmount(row["amount"]);
+        if (raw > 0) {
+          amount = raw;
           txType = "INCOME";
-        } else if (rawAmount < 0) {
-          amount = Math.abs(rawAmount);
+        } else if (raw < 0) {
+          amount = Math.abs(raw);
           txType = "EXPENSE";
         }
       }
 
       if (amount === 0) continue;
 
-      if (type.toUpperCase() === "TRANSFER") txType = "TRANSFER";
-      if (type.toUpperCase() === "TOPUP" || type.toUpperCase() === "TOP-UP") txType = "INCOME";
+      const revolut_type = (row["type"] || "").toUpperCase();
+      switch (revolut_type) {
+        case "TRANSFER":
+          txType = "TRANSFER";
+          break;
+        case "TOPUP":
+        case "TOP-UP":
+        case "TOP_UP":
+        case "REFUND":
+        case "CASHBACK":
+          txType = "INCOME";
+          break;
+        case "CARD_PAYMENT":
+        case "ATM":
+        case "FEE":
+          txType = "EXPENSE";
+          break;
+      }
+
+      if (txType !== "TRANSFER") {
+        const dl = description.toLowerCase();
+        if (dl.startsWith("transfer to") || dl.startsWith("transfer from")) {
+          txType = "TRANSFER";
+        }
+      }
 
       transactions.push({
         date,
@@ -78,8 +106,8 @@ export const revolutParser: BankParser = {
         originalDescription: description.trim(),
         amount,
         type: txType,
-        balance: row["Balance"] ? cleanAmount(row["Balance"]) : undefined,
-        reference: row["Reference"] || undefined,
+        balance: row["balance"] ? cleanAmount(row["balance"]) : undefined,
+        reference: row["reference"] || undefined,
       });
     }
 

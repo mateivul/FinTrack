@@ -2,6 +2,7 @@ import Papa from "papaparse";
 import type { BankParser, ParsedTransaction } from "./base-parser";
 import { cleanAmount, parseEuropeanDate } from "./base-parser";
 
+
 export function extractBcrDescription(raw: string): string {
   const platitorMatch = raw.match(/Platitor:\s*'([^']+)'/i);
   if (platitorMatch) {
@@ -30,7 +31,7 @@ export const bcrParser: BankParser = {
   detect(content: string): boolean {
     const upper = content.toUpperCase();
     return (
-      upper.includes("RNCB") || // BCR's BIC/IBAN prefix
+      upper.includes("RNCB") || 
       (upper.includes("DATA FINALIZARII TRANZACTIEI") && upper.includes("DEBIT (SUMA)")) ||
       (upper.includes("TRANZACTII FINALIZATE") && upper.includes("CREDIT (SUMA)"))
     );

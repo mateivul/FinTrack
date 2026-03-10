@@ -25,6 +25,9 @@ export async function POST(request: NextRequest) {
     if (!account) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
+    if (account.accountType === "CASH") {
+      return NextResponse.json({ error: "Cash accounts cannot be used for statement imports" }, { status: 400 });
+    }
 
     let content = "";
     let fileName = "pasted-text.txt";
@@ -39,36 +42,14 @@ export async function POST(request: NextRequest) {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
       fileType = ext;
 
+      if (ext !== "csv") {
+        return NextResponse.json({ error: "Only CSV files are supported" }, { status: 400 });
+      }
+
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-
-      if (ext === "pdf") {
-        try {
-          const { PDFParse } = require("pdf-parse") as { PDFParse: new (opts: { data: Buffer }) => { getText(): Promise<{ text: string }> } };
-          const pdfData = await new PDFParse({ data: buffer }).getText();
-          content = pdfData.text;
-          fileType = "pdf";
-        } catch (err) {
-          console.error("PDF parse error:", err);
-          return NextResponse.json({ error: "Could not parse PDF file. Make sure it is not password-protected and contains selectable text (not a scanned image)." }, { status: 400 });
-        }
-      } else if (ext === "xlsx" || ext === "xls") {
-        try {
-          const XLSX = await import("xlsx");
-          const workbook = XLSX.read(buffer, { type: "buffer" });
-          const sheetName = workbook.SheetNames[0];
-          const sheet = workbook.Sheets[sheetName];
-          content = XLSX.utils.sheet_to_csv(sheet);
-          fileType = "xlsx";
-        } catch {
-          return NextResponse.json({ error: "Could not parse Excel file" }, { status: 400 });
-        }
-      } else if (ext === "csv" || ext === "txt" || ext === "ofx" || ext === "qif") {
-        content = buffer.toString("utf-8");
-        fileType = ext;
-      } else {
-        return NextResponse.json({ error: "Unsupported file format" }, { status: 400 });
-      }
+      content = buffer.toString("utf-8");
+      fileType = "csv";
     } else if (textContent) {
       content = textContent;
       fileType = "text";
@@ -77,45 +58,38 @@ export async function POST(request: NextRequest) {
     }
 
     const detection = detectBank(content);
-    const preview = content.split("\n").slice(0, 8).join("\n");
-    console.log("[import] detected bank:", detection.bankName, "| isGeneric:", detection.isGeneric);
-    console.log("[import] content preview:\n", preview);
 
     const parsed = parseStatement(content, detection.parser ?? undefined);
-    console.log("[import] parsed transactions:", parsed.length);
 
     if (parsed.length === 0) {
       return NextResponse.json({
         error: "No transactions found in the file. Please check the format.",
-        debug: {
-          detectedBank: detection.bankName,
-          isGeneric: detection.isGeneric,
-          contentPreview: preview,
-        },
       }, { status: 400 });
     }
 
-    const duplicateChecks = await Promise.all(
-      parsed.map(async (tx) => {
-        const existing = await prisma.transaction.findFirst({
-          where: {
-            userId: session.userId,
-            bankAccountId: accountId,
-            date: {
-              gte: new Date(tx.date.getTime() - 86400000), 
-              lte: new Date(tx.date.getTime() + 86400000),
-            },
-            amount: tx.amount,
-            originalDescription: {
-              contains: (tx.originalDescription ?? tx.description).substring(0, 60),
-              mode: "insensitive",
-            },
-          },
-        });
-        const key = tx.patternKey ?? tx.description.toLowerCase().trim();
-        return { ...tx, patternKey: key, isDuplicate: existing !== null, existingId: existing?.id };
-      })
-    );
+    const minDate = new Date(Math.min(...parsed.map((t) => t.date.getTime())) - 86400000);
+    const maxDate = new Date(Math.max(...parsed.map((t) => t.date.getTime())) + 86400000);
+    const existingTxs = await prisma.transaction.findMany({
+      where: {
+        userId: session.userId,
+        bankAccountId: accountId,
+        date: { gte: minDate, lte: maxDate },
+      },
+      select: { id: true, amount: true, date: true, originalDescription: true },
+    });
+
+    const duplicateChecks = parsed.map((tx) => {
+      const txTime = tx.date.getTime();
+      const descKey = (tx.originalDescription ?? tx.description).substring(0, 60).toLowerCase();
+      const existing = existingTxs.find(
+        (e) =>
+          e.amount === tx.amount &&
+          Math.abs(new Date(e.date).getTime() - txTime) <= 86400000 &&
+          (e.originalDescription ?? "").toLowerCase().includes(descKey)
+      );
+      const key = tx.patternKey ?? tx.description.toLowerCase().trim();
+      return { ...tx, patternKey: key, isDuplicate: existing !== undefined, existingId: existing?.id };
+    });
 
     const patternKeys = duplicateChecks.map((tx) => tx.patternKey).filter(Boolean) as string[];
     const matchingRules = patternKeys.length

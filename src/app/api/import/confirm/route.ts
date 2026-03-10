@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { demoGuard } from "@/lib/demo";
 
 interface TransactionToImport {
   date: string;
@@ -17,6 +18,7 @@ interface TransactionToImport {
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const body = await request.json();
   const {
@@ -74,12 +76,18 @@ export async function POST(request: NextRequest) {
       data: { currentBalance: { increment: balanceDelta } },
     });
 
+    const importedDates = toImport.map((t) => new Date(t.date));
+    const statementFrom = importedDates.length ? new Date(Math.min(...importedDates.map((d) => d.getTime()))) : undefined;
+    const statementTo = importedDates.length ? new Date(Math.max(...importedDates.map((d) => d.getTime()))) : undefined;
+
     await tx.importHistory.update({
       where: { id: importHistoryId },
       data: {
         transactionsImported: importedCount,
         transactionsSkipped: skipped.length,
         status: "COMPLETED",
+        statementFrom,
+        statementTo,
       },
     });
   });
@@ -93,7 +101,7 @@ export async function POST(request: NextRequest) {
           description: t.description,
           tags: {
             deleteMany: {},
-            create: t.tagIds!.map((tagId) => ({ tagId })),
+            create: (t.tagIds ?? []).map((tagId) => ({ tagId })),
           },
         },
         create: {
@@ -101,7 +109,7 @@ export async function POST(request: NextRequest) {
           pattern: t.patternKey!,
           description: t.description,
           tags: {
-            create: t.tagIds!.map((tagId) => ({ tagId })),
+            create: (t.tagIds ?? []).map((tagId) => ({ tagId })),
           },
         },
       });

@@ -103,7 +103,7 @@ export function autoDetectColumns(headers: string[]): ColumnMapping {
   return {
     date: find("date", "data", "datum", "fecha"),
     description: find("description", "descriere", "details", "detalii", "merchant", "payee", "memo", "narrative"),
-    amount: find("amount") || find("suma", "suma"),
+    amount: find("amount", "suma", "valoare"),
     debit: find("debit", "out", "iesiri", "paid out"),
     credit: find("credit", "in", "intrari", "paid in"),
     balance: find("balance", "sold", "solde"),

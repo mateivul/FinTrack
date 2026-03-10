@@ -57,6 +57,7 @@ interface Account {
   name: string;
   currency: string;
   color: string;
+  accountType: "CASH" | "CARD" | "SAVINGS";
 }
 
 export default function ImportPage() {
@@ -96,15 +97,23 @@ export default function ImportPage() {
     },
   });
 
-  const accounts: Account[] = accountsData?.accounts ?? [];
+  const accounts: Account[] = (accountsData?.accounts ?? []).filter(
+    (a: Account) => a.accountType !== "CASH"
+  );
   const tags: Tag[] = tagsData?.tags ?? [];
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped) setFile(dropped);
-  }, []);
+    if (dropped) {
+      if (!dropped.name.toLowerCase().endsWith(".csv")) {
+        toast.error(t("import.errors.csvOnly"));
+        return;
+      }
+      setFile(dropped);
+    }
+  }, [t]);
 
   async function handleUpload() {
     if (!accountId) {
@@ -112,7 +121,7 @@ export default function ImportPage() {
       return;
     }
     if (!file && !pasteText.trim()) {
-      toast.error("Please upload a file or paste text");
+      toast.error(t("import.errors.noFileOrText"));
       return;
     }
 
@@ -155,7 +164,7 @@ export default function ImportPage() {
   async function handleConfirm() {
     const toImport = transactions.filter((t) => !t.skip);
     if (toImport.length === 0) {
-      toast.error("No transactions to import");
+      toast.error(t("import.errors.noTransactions"));
       return;
     }
 
@@ -177,7 +186,7 @@ export default function ImportPage() {
         return;
       }
 
-      toast.success(`${data.imported} transactions imported!`);
+      toast.success(t("import.success", { count: data.imported }));
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
@@ -221,13 +230,13 @@ export default function ImportPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || "Failed to create tag");
+        toast.error(data.error || t("common.error"));
         return;
       }
       await queryClient.invalidateQueries({ queryKey: ["tags"] });
       setNewTagName("");
       setShowNewTagForm(false);
-      toast.success(`Tag "${data.tag.name}" created`);
+      toast.success(t("tags.created"));
     } catch {
       toast.error(t("errors.networkError"));
     } finally {
@@ -251,7 +260,7 @@ export default function ImportPage() {
   const duplicateCount = transactions.filter((t) => t.isDuplicate).length;
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">{t("import.title")}</h1>
         <p className="text-sm text-muted-foreground">{t("import.subtitle")}</p>
@@ -289,7 +298,7 @@ export default function ImportPage() {
               <Label>{t("import.selectAccount")} *</Label>
               <Select value={accountId} onValueChange={setAccountId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select account..." />
+                  <SelectValue placeholder={t("import.selectAccount")} />
                 </SelectTrigger>
                 <SelectContent>
                   {accounts.map((a) => (
@@ -297,6 +306,7 @@ export default function ImportPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">{t("import.cashAccountNote")}</p>
             </div>
 
             {!showPaste && (
@@ -315,7 +325,7 @@ export default function ImportPage() {
                 <input
                   id="fileInput"
                   type="file"
-                  accept=".pdf,.csv,.xlsx,.xls,.ofx,.qif,.txt"
+                  accept=".csv"
                   className="hidden"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
@@ -337,7 +347,7 @@ export default function ImportPage() {
                       onClick={(e) => { e.stopPropagation(); setFile(null); }}
                     >
                       <X className="w-4 h-4 mr-1" />
-                      Remove
+                      {t("common.delete")}
                     </Button>
                   </div>
                 ) : (
@@ -347,7 +357,7 @@ export default function ImportPage() {
                     </div>
                     <div>
                       <p className="font-semibold">{t("import.dragDrop")}</p>
-                      <p className="text-sm text-muted-foreground">{t("import.supported")}</p>
+                      <p className="text-sm text-muted-foreground">{t("import.errors.csvOnly")}</p>
                       <p className="text-xs text-muted-foreground mt-1">{t("import.maxSize")}</p>
                     </div>
                     <Button variant="outline" size="sm">
@@ -369,11 +379,11 @@ export default function ImportPage() {
 
             {showPaste && (
               <div className="space-y-2">
-                <Label>Paste CSV or text content</Label>
+                <Label>{t("import.pasteLabel")}</Label>
                 <Textarea
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
-                  placeholder="Paste your bank statement CSV content here..."
+                  placeholder={t("import.pastePlaceholder")}
                   rows={10}
                   className="font-mono text-xs"
                 />
@@ -415,7 +425,7 @@ export default function ImportPage() {
                     <p className="font-semibold">{t("import.detected")}: {bankName}</p>
                     <p className="text-sm text-muted-foreground">
                       {t("import.transactionsFound", { count: transactions.length })}
-                      {duplicateCount > 0 && ` · ${duplicateCount} duplicates`}
+                      {duplicateCount > 0 && ` · ${t("import.duplicatesFound", { count: duplicateCount })}`}
                     </p>
                   </div>
                 </div>
@@ -440,7 +450,7 @@ export default function ImportPage() {
                 }}
               />
               <label htmlFor="selectAll" className="text-sm cursor-pointer">
-                Select all ({toImportCount} / {transactions.length})
+                {t("import.selectAll", { current: toImportCount, total: transactions.length })}
               </label>
             </div>
 
@@ -450,7 +460,7 @@ export default function ImportPage() {
                 onClick={() => setShowNewTagForm(true)}
                 className="flex items-center gap-1 text-xs text-primary hover:underline"
               >
-                <Plus className="w-3 h-3" /> New tag
+                <Plus className="w-3 h-3" /> {t("import.newTag")}
               </button>
             ) : (
               <form onSubmit={handleCreateTag} className="flex items-center gap-1.5">
@@ -459,7 +469,7 @@ export default function ImportPage() {
                   type="text"
                   value={newTagName}
                   onChange={(e) => setNewTagName(e.target.value)}
-                  placeholder="Tag name"
+                  placeholder={t("import.tagPlaceholder")}
                   className="text-xs border rounded px-2 py-1 bg-background w-28 focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <input
@@ -517,13 +527,13 @@ export default function ImportPage() {
                             className="text-sm font-medium bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none flex-1 min-w-0 disabled:pointer-events-none"
                           />
                           {tx.ruleApplied && (
-                            <span title="Auto-filled from previous import">
+                            <span title={t("import.autoFilled")}>
                               <Zap className="w-3 h-3 text-amber-500 shrink-0" />
                             </span>
                           )}
                           {tx.isDuplicate && (
                             <Badge className="bg-yellow-100 text-yellow-700 text-xs shrink-0">
-                              Duplicate
+                              {t("import.duplicate")}
                             </Badge>
                           )}
                         </div>
@@ -532,9 +542,9 @@ export default function ImportPage() {
                         </p>
                         {tags.length === 0 && !tx.skip && (
                           <p className="text-xs text-muted-foreground">
-                            No tags yet —{" "}
-                            <a href="/tags" className="underline hover:text-foreground">create tags</a>
-                            {" "}to categorize transactions
+                            {t("import.noTagsYet")} —{" "}
+                            <a href="/tags" className="underline hover:text-foreground">{t("import.noTagsCreate")}</a>
+                            {" "}{t("import.noTagsDesc2")}
                           </p>
                         )}
                         {tags.length > 0 && !tx.skip && (
@@ -582,7 +592,7 @@ export default function ImportPage() {
 
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Importing {toImportCount} of {transactions.length} transactions
+              {t("import.importingCount", { current: toImportCount, total: transactions.length })}
             </p>
             <Button onClick={handleConfirm} disabled={confirming || toImportCount === 0} size="lg">
               {confirming ? (
@@ -607,17 +617,17 @@ export default function ImportPage() {
             <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-6">
               <CheckCircle className="w-10 h-10 text-emerald-500" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">Import Complete!</h2>
+            <h2 className="text-2xl font-bold mb-2">{t("import.successTitle")}</h2>
             <p className="text-muted-foreground mb-8">
-              {toImportCount} transactions have been imported successfully.
-              {duplicateCount > 0 && ` ${duplicateCount} duplicates were skipped.`}
+              {t("import.successDesc", { count: toImportCount })}
+              {duplicateCount > 0 && ` ${t("import.successDuplicates", { count: duplicateCount })}`}
             </p>
             <div className="flex gap-3 justify-center">
               <Button variant="outline" onClick={resetWizard}>
-                Import Another
+                {t("import.importAnother")}
               </Button>
               <Button asChild>
-                <a href="/transactions">View Transactions</a>
+                <a href="/transactions">{t("import.viewTransactions")}</a>
               </Button>
             </div>
           </CardContent>

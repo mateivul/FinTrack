@@ -20,7 +20,6 @@ export const ingParser: BankParser = {
   parse(content: string): ParsedTransaction[] {
     const transactions: ParsedTransaction[] = [];
 
-    // this for ING csv variants 
     const result = Papa.parse<Record<string, string>>(content, {
       header: true,
       skipEmptyLines: true,
@@ -65,7 +64,6 @@ export const ingParser: BankParser = {
         continue;
       }
 
-      // if cant get the amount for a transaction skip
       if (amount === 0) continue;
 
       const descLower = description.toLowerCase();
