@@ -42,6 +42,7 @@ export async function POST() {
     let occurrence = rule.nextOccurrence;
 
     while (occurrence <= now) {
+      const nextOcc = getNextOccurrence(occurrence, rule.frequency);
       await prisma.$transaction(async (tx) => {
         await tx.transaction.create({
           data: {
@@ -65,16 +66,16 @@ export async function POST() {
           where: { id: rule.bankAccountId },
           data: { currentBalance: { increment: balanceDelta } },
         });
+
+        await tx.recurringRule.update({
+          where: { id: rule.id },
+          data: { nextOccurrence: nextOcc },
+        });
       });
 
       processed++;
-      occurrence = getNextOccurrence(occurrence, rule.frequency);
+      occurrence = nextOcc;
     }
-
-    await prisma.recurringRule.update({
-      where: { id: rule.id },
-      data: { nextOccurrence: occurrence },
-    });
   }
 
   return NextResponse.json({ processed });

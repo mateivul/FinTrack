@@ -39,7 +39,7 @@ export default function DashboardLayout({
         }
       })
       .catch(() => {});
-  }, []);
+  }, [queryClient]);
 
   const { data: user, isLoading } = useQuery<User>({
     queryKey: ["auth-me"],

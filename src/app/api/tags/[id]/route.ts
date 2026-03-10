@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { tagSchema } from "@/lib/validations";
 import { demoGuard } from "@/lib/demo";
+import { Prisma } from "@prisma/client";
 
 export async function PUT(
   request: NextRequest,
@@ -25,8 +26,11 @@ export async function PUT(
   try {
     const tag = await prisma.tag.update({ where: { id }, data: parsed.data });
     return NextResponse.json({ tag });
-  } catch {
-    return NextResponse.json({ error: "Tag name already exists" }, { status: 409 });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return NextResponse.json({ error: "Tag name already exists" }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
