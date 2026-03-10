@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { budgetSchema } from "@/lib/validations";
+import { demoGuard } from "@/lib/demo";
 
 export async function PUT(
   request: NextRequest,
@@ -9,6 +10,7 @@ export async function PUT(
 ) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const { id } = await params;
   const body = await request.json();
@@ -32,8 +34,10 @@ export async function DELETE(
 ) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const demoRes = demoGuard(session); if (demoRes) return demoRes;
 
   const { id } = await params;
-  await prisma.budget.deleteMany({ where: { id, userId: session.userId } });
+  const result = await prisma.budget.deleteMany({ where: { id, userId: session.userId } });
+  if (result.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ success: true });
 }

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Plus, Target, MoreHorizontal, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Target, MoreHorizontal, Pencil, Trash2, AlertTriangle, Share2, Users, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,10 +48,22 @@ interface Budget {
   name: string;
   amount: number;
   currentSpent: number;
+  rollover: boolean;
+  rolloverAmount: number;
+  effectiveAmount: number;
   period: string;
   alertThreshold: number;
   tagId: string | null;
   tag: { id: string; name: string; color: string } | null;
+  userId: string;
+  sharedWith: { userId: string; user: { id: string; name: string; email: string } }[];
+}
+
+interface Invite {
+  id: string;
+  invitedEmail: string;
+  budget: { id: string; name: string; amount: number; period: string };
+  inviter: { name: string; email: string };
 }
 
 interface Tag {
@@ -77,6 +89,9 @@ export default function BudgetsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
+  const [shareId, setShareId] = useState<string | null>(null);
+  const [shareEmail, setShareEmail] = useState("");
+  const [sharing, setSharing] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["budgets"],
@@ -95,8 +110,38 @@ export default function BudgetsPage() {
     },
   });
 
+  const { data: accountsData } = useQuery({
+    queryKey: ["accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/accounts");
+      return res.json();
+    },
+    staleTime: 60000,
+  });
+
+  const { data: meData } = useQuery({
+    queryKey: ["auth-me"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/me");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: invitesData, refetch: refetchInvites } = useQuery({
+    queryKey: ["invites"],
+    queryFn: async () => {
+      const res = await fetch("/api/invites");
+      return res.json();
+    },
+  });
+
   const budgets: Budget[] = data?.budgets ?? [];
   const tags: Tag[] = tagsData?.tags ?? [];
+  const primaryCurrency: string = accountsData?.accounts?.[0]?.currency ?? "RON";
+  const currentUserId: string = meData?.id ?? meData?.user?.id ?? "";
+  const pendingInvites: Invite[] = invitesData?.invites ?? [];
+  const shareBudget = budgets.find((b) => b.id === shareId);
 
   function openAdd() {
     setEditingId(null);
@@ -112,15 +157,15 @@ export default function BudgetsPage() {
       amount: String(budget.amount),
       period: budget.period as "MONTHLY",
       alertThreshold: budget.alertThreshold,
-      rollover: false,
+      rollover: budget.rollover,
     });
     setDialogOpen(true);
   }
 
   async function handleSave() {
-    if (!form.name.trim()) { toast.error("Budget name is required"); return; }
+    if (!form.name.trim()) { toast.error(t("budgets.nameRequired")); return; }
     if (!form.amount || isNaN(parseFloat(form.amount)) || parseFloat(form.amount) <= 0) {
-      toast.error("Please enter a valid amount"); return;
+      toast.error(t("budgets.invalidAmount")); return;
     }
     setSaving(true);
     try {
@@ -132,7 +177,7 @@ export default function BudgetsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          tagId: form.tagId || undefined,
+          tagId: form.tagId || null,
           amount: parseFloat(form.amount),
         }),
       });
@@ -143,7 +188,7 @@ export default function BudgetsPage() {
         return;
       }
 
-      toast.success(editingId ? "Budget updated!" : "Budget created!");
+      toast.success(editingId ? t("budgets.updated") : t("budgets.created"));
       setDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["budgets"] });
     } finally {
@@ -152,24 +197,113 @@ export default function BudgetsPage() {
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/budgets/${id}`, { method: "DELETE" });
-    toast.success("Budget deleted");
-    queryClient.invalidateQueries({ queryKey: ["budgets"] });
+    const res = await fetch(`/api/budgets/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      toast.success(t("budgets.deleted"));
+      queryClient.invalidateQueries({ queryKey: ["budgets"] });
+    } else {
+      toast.error(t("common.error"));
+    }
     setDeleteId(null);
   }
 
+  async function handleInvite() {
+    if (!shareId || !shareEmail.trim()) return;
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/budgets/${shareId}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: shareEmail.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        const key = res.status === 400 && d.error?.includes("yourself")
+          ? "budgets.inviteSelf"
+          : res.status === 409 && d.error?.includes("member")
+          ? "budgets.alreadyMember"
+          : res.status === 409
+          ? "budgets.inviteAlreadySent"
+          : "common.error";
+        toast.error(t(key as Parameters<typeof t>[0]));
+      } else {
+        toast.success(t("budgets.inviteSuccess"));
+        setShareEmail("");
+        queryClient.invalidateQueries({ queryKey: ["budgets"] });
+      }
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function handleRemoveMember(budgetId: string, memberId: string) {
+    await fetch(`/api/budgets/${budgetId}/invite`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: memberId }),
+    });
+    queryClient.invalidateQueries({ queryKey: ["budgets"] });
+  }
+
+  async function handleInviteResponse(inviteId: string, action: "accept" | "reject") {
+    const res = await fetch(`/api/invites/${inviteId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (res.ok) {
+      refetchInvites();
+      if (action === "accept") queryClient.invalidateQueries({ queryKey: ["budgets"] });
+    } else {
+      toast.error(t("common.error"));
+    }
+  }
+
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{t("budgets.title")}</h1>
-          <p className="text-sm text-muted-foreground">{budgets.length} budgets</p>
+          <p className="text-sm text-muted-foreground">{budgets.length} {t("budgets.count")}</p>
         </div>
         <Button onClick={openAdd}>
           <Plus className="w-4 h-4 mr-2" />
           {t("budgets.add")}
         </Button>
       </div>
+
+      {pendingInvites.length > 0 && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Users className="w-4 h-4" />
+              {t("budgets.pendingInvites")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingInvites.map((invite) => (
+              <div key={invite.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-background border">
+                <div className="min-w-0">
+                  <p className="font-medium text-sm truncate">{invite.budget.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {invite.inviter.name} {t("budgets.invitedBy")}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button size="sm" onClick={() => handleInviteResponse(invite.id, "accept")}>
+                    <Check className="w-3 h-3 mr-1" />
+                    {t("budgets.accept")}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleInviteResponse(invite.id, "reject")}>
+                    <X className="w-3 h-3 mr-1" />
+                    {t("budgets.reject")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -194,7 +328,8 @@ export default function BudgetsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {budgets.map((budget) => {
-            const pct = Math.min((budget.currentSpent / budget.amount) * 100, 100);
+            const effective = budget.effectiveAmount ?? budget.amount;
+            const pct = Math.min((budget.currentSpent / effective) * 100, 100);
             const isOverAlert = pct >= budget.alertThreshold * 100;
             const isOver = pct >= 100;
 
@@ -230,6 +365,12 @@ export default function BudgetsPage() {
                             <Pencil className="w-4 h-4 mr-2" />
                             {t("common.edit")}
                           </DropdownMenuItem>
+                          {budget.userId === currentUserId && (
+                            <DropdownMenuItem onClick={() => { setShareId(budget.id); setShareEmail(""); }}>
+                              <Share2 className="w-4 h-4 mr-2" />
+                              {t("budgets.share")}
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={() => setDeleteId(budget.id)}
@@ -245,10 +386,10 @@ export default function BudgetsPage() {
                 <CardContent className="space-y-3">
                   <div className="flex justify-between text-sm">
                     <span className={cn("font-semibold", isOver ? "text-red-500" : "text-foreground")}>
-                      {formatCurrency(budget.currentSpent)} {t("budgets.spent")}
+                      {formatCurrency(budget.currentSpent, primaryCurrency)} {t("budgets.spent")}
                     </span>
                     <span className="text-muted-foreground">
-                      of {formatCurrency(budget.amount)}
+                      {t("common.of")} {formatCurrency(effective, primaryCurrency)}
                     </span>
                   </div>
 
@@ -260,13 +401,26 @@ export default function BudgetsPage() {
                   </div>
 
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{pct.toFixed(0)}% used</span>
+                    <span>{pct.toFixed(0)}{t("budgets.pctUsed")}</span>
                     {isOver ? (
                       <span className="text-red-500 font-medium">{t("budgets.over")}</span>
                     ) : (
-                      <span>{formatCurrency(budget.amount - budget.currentSpent)} {t("budgets.remaining")}</span>
+                      <span>{formatCurrency(effective - budget.currentSpent, primaryCurrency)} {t("budgets.remaining")}</span>
                     )}
                   </div>
+                  {budget.rollover && budget.rolloverAmount > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      +{formatCurrency(budget.rolloverAmount, primaryCurrency)} {t("budgets.rolloverFrom")}
+                    </p>
+                  )}
+                  {budget.sharedWith.length > 0 && (
+                    <div className="flex items-center gap-1 pt-1">
+                      <Users className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {budget.sharedWith.map((s) => s.user.name).join(", ")}
+                      </span>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -290,18 +444,18 @@ export default function BudgetsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>
-                Tag{" "}
-                <span className="text-muted-foreground font-normal">(optional)</span>
+                {t("transactions.tags")}{" "}
+                <span className="text-muted-foreground font-normal">({t("common.optional")})</span>
               </Label>
               <Select
                 value={form.tagId || "none"}
                 onValueChange={(v) => setForm((f) => ({ ...f, tagId: v === "none" ? "" : v }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="All transactions" />
+                  <SelectValue placeholder={t("budgets.allTransactions")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">All transactions</SelectItem>
+                  <SelectItem value="none">{t("budgets.allTransactions")}</SelectItem>
                   {tags.map((tag) => (
                     <SelectItem key={tag.id} value={tag.id}>
                       <span className="flex items-center gap-2">
@@ -358,6 +512,60 @@ export default function BudgetsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button onClick={handleSave} disabled={saving}>{saving ? t("common.loading") : t("common.save")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!shareId} onOpenChange={(o) => !o && setShareId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="w-4 h-4" />
+              {t("budgets.share")} — {shareBudget?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {shareBudget && shareBudget.sharedWith.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>{t("budgets.members")}</Label>
+                <div className="space-y-1">
+                  {shareBudget.sharedWith.map((m) => (
+                    <div key={m.userId} className="flex items-center justify-between p-2 rounded-lg bg-muted">
+                      <div>
+                        <p className="text-sm font-medium">{m.user.name}</p>
+                        <p className="text-xs text-muted-foreground">{m.user.email}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive h-7"
+                        onClick={() => shareId && handleRemoveMember(shareId, m.userId)}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>{t("budgets.inviteEmail")}</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  placeholder="email@example.com"
+                  value={shareEmail}
+                  onChange={(e) => setShareEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+                />
+                <Button onClick={handleInvite} disabled={sharing || !shareEmail.trim()}>
+                  {sharing ? t("common.loading") : t("common.add")}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShareId(null)}>{t("common.close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
