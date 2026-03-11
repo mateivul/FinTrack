@@ -58,7 +58,7 @@ The intention was to build something I would use myself, but also something that
 **Prerequisites:** Node.js 20+, PostgreSQL database
 
 ```bash
-git clone https://github.com/yourusername/fintrack
+git clone https://github.com/mateivul/fintrack
 cd fintrack
 npm install
 ```
@@ -67,7 +67,7 @@ Create a `.env` file:
 
 ```env
 DATABASE_URL="postgresql://..."
-SESSION_SECRET="a-long-random-secret-string"
+SESSION_SECRET="..."
 ```
 
 Set up the database:
