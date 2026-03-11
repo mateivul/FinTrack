@@ -4,7 +4,7 @@ I began this because I was tired of manually copying card transactions into a sp
 
 The first idea was just to pull transactions automatically from bank statement exports instead of writing them by hand. But once I had that working I figured it made more sense to have everything in one place, cash, card, savings, all of it, rather than a spreadsheet that only tracked one thing.
 
-The intention was to build something I would use myself, but also something that could help others who want a cleaner way to track their personal finances.
+Built it for myself, but maybe it's useful to someone else too.
 
 ![Dashboard](public/screenshots/dashboard.png)
 
@@ -39,7 +39,7 @@ The intention was to build something I would use myself, but also something that
 
 | Layer | Tech |
 |-------|------|
-| Framework | Next.js 16 (App Router) |
+| Framework | Next.js 16 |
 | Language | TypeScript |
 | Database | PostgreSQL (Neon) |
 | ORM | Prisma |
